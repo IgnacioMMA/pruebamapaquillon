@@ -5,6 +5,7 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth as getSecondaryAuth, createUserWithEmailAndPassword, signOut as secondarySignOut } from 'firebase/auth';
 import { auth, firestore, database, storage, firebaseConfig } from '../config/firebase';
 import { doc, setDoc, collection, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
+import WelcomeScreen from './WelcomeScreen';
 import NotificationSystem from './NotificationSystem';
 import {
   ref as databaseRef,     // Alias para database ref
@@ -466,7 +467,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
   const [editingUser, setEditingUser] = useState(null);
   const [activeTab, setActiveTab] = useState(() => {
     const savedTab = localStorage.getItem('superAdminActiveTab');
-    return savedTab || 'users';
+    return savedTab || 'inicio'; // CAMBIAR de 'users' a 'inicio'
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     const saved = localStorage.getItem('superAdminSidebarOpen');
@@ -607,10 +608,11 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
   // ========== ESTADOS PARA SOLICITUDES ==========
   const [solicitudes, setSolicitudes] = useState([]);
   const [showSolicitudDetails, setShowSolicitudDetails] = useState(null);
-
-  // ========== ESTADOS PARA SIDEBAR ==========
-
-
+  // NUEVO ESTADO: Para controlar la pantalla de bienvenida
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState(() => {
+    const welcomeShown = sessionStorage.getItem('superAdminWelcomeShown');
+    return !welcomeShown;
+  });
   // ========== FUNCIONES PARA MANEJO DE DOCUMENTOS ==========
 
   const handleFileUpload = async (file, tipoDocumento, vehiculoId) => {
@@ -864,6 +866,13 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       */
     };
   }, []);
+
+  // NUEVO USEEFFECT: Para marcar que ya se mostró la bienvenida
+  useEffect(() => {
+    if (!showWelcomeScreen) {
+      sessionStorage.setItem('superAdminWelcomeShown', 'true');
+    }
+  }, [showWelcomeScreen]);
 
   // ========== FUNCIONES DE CARGA DE DATOS ==========
   const loadUsers = async () => {
@@ -1836,10 +1845,10 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       admins: users.filter(u => u.role === 'admin').length,
       trabajadores: users.filter(u => u.role === 'trabajador').length,
       superadmins: users.filter(u => u.role === 'superadmin').length,
+      monitores: users.filter(u => u.role === 'monitor').length // AGREGAR ESTA LÍNEA
     };
     return stats;
   };
-
   const getVehicleStats = () => {
     const stats = {
       total: vehiculos.length,
@@ -1935,14 +1944,19 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
     }
   };
 
+  // Busca la función menuItems (alrededor de la línea 1760)
   const menuItems = useMemo(() => [
     {
-      id: 'navegacion',
-      icon: '🚀',
-      title: 'Navegación',
+      id: 'principal',
+      icon: '🏠',
+      title: 'Principal',
       submenu: [
-        { id: 'dashboard', icon: '📊', title: 'Dashboard GPS', view: 'dashboard' },
-        { id: 'zones', icon: '🗺️', title: 'Gestión Zonas', view: 'zones' },
+        {
+          id: 'inicio',
+          icon: '🏛️',
+          title: 'Inicio',
+          tab: 'inicio' // NUEVO
+        },
         { id: 'fleet', icon: '🚛', title: 'Panel Flota', view: 'fleet' }
       ]
     },
@@ -2237,51 +2251,6 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
             )}
           </div>
         </div>
-
-        {/* BOTÓN DE PANEL ADMIN - Mejorado para móvil */}
-        <div style={{ padding: isMobile ? '8px' : '5px 0' }}>
-          <button
-            onClick={() => {
-              onViewChange && onViewChange('admin');
-              if (isMobile) setIsSidebarOpen(false);
-            }}
-            style={{
-              width: '100%',
-              padding: isMobile ? '14px 20px' : (isSidebarOpen ? '12px 20px' : '12px'),
-              background: currentView === 'admin' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-              border: 'none',
-              borderLeft: currentView === 'admin' ? '4px solid #3b82f6' : '4px solid transparent',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: isSidebarOpen ? 'flex-start' : 'center',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              fontSize: isMobile ? '15px' : '14px',
-              gap: '10px',
-              minHeight: isMobile ? '50px' : '44px'
-            }}
-            onMouseEnter={(e) => {
-              if (currentView !== 'admin') {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                e.currentTarget.style.transform = 'translateX(2px)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (currentView !== 'admin') {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.transform = 'translateX(0)';
-              }
-            }}
-            title={!isSidebarOpen ? 'Panel Admin' : ''}
-          >
-            <span style={{ fontSize: isMobile ? '20px' : '18px' }}>🏠</span>
-            {isSidebarOpen && (
-              <span style={{ fontWeight: '500' }}>Panel Admin</span>
-            )}
-          </button>
-        </div>
-
         {/* Menú del Sidebar - Mejorado para móvil */}
         <div style={{
           flex: 1,
@@ -2570,1376 +2539,4093 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         )}
 
         <div style={{ padding: isMobile ? '15px' : '30px' }}>
-          {/* Mensajes */}
-          {message.text && (
-            <div style={{
-              padding: '12px',
-              borderRadius: '8px',
-              marginBottom: '20px',
-              background: message.type === 'success' ? '#dcfce7' : '#fee2e2',
-              border: `1px solid ${message.type === 'success' ? '#86efac' : '#fecaca'}`,
-              color: message.type === 'success' ? '#166534' : '#991b1b'
-            }}>
-              {message.text}
-            </div>
-          )}
-
-          {/* Mensaje para crear zona desde solicitud */}
-          {solicitudParaZona && (
-            <div style={{
-              padding: '15px',
-              borderRadius: '8px',
-              marginBottom: '20px',
-              background: '#dbeafe',
-              border: '2px solid #3b82f6',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: '10px'
-            }}>
-              <div>
-                <strong style={{ color: '#1e40af' }}>
-                  ✅ Solicitud aprobada: {solicitudParaZona.asunto}
-                </strong>
-                <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#1e3a8a' }}>
-                  Ahora puedes crear una zona de trabajo basada en esta solicitud
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  onClick={crearZonaDesdeSolicitud}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#22c55e',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '600'
-                  }}
-                >
-                  🗺️ Crear Zona
-                </button>
-                <button
-                  onClick={() => setSolicitudParaZona(null)}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#6b7280',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* CONTENIDO DE USUARIOS */}
-          {activeTab === 'users' && (
+          {/* MOSTRAR WELCOME SCREEN O CONTENIDO NORMAL */}
+          {false && showWelcomeScreen ? (
+            <WelcomeScreen
+              currentUser={currentUser}
+              onClose={() => setShowWelcomeScreen(false)}
+              stats={{
+                totalUsers: users.length,
+                totalVehicles: vehiculos.length,
+                pendingSolicitudes: solicitudes.filter(s => s.estado === 'pendiente').length
+              }}
+            />
+          ) : (
             <>
-              <h1 style={{
-                margin: '0 0 30px 0',
-                color: '#1e293b',
-                fontSize: '28px',
-                fontWeight: '600'
-              }}>
-                👥 Gestión de Usuarios
-              </h1>
-
-              {/* Estadísticas de usuarios */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '150px' : '200px'}, 1fr))`,
-                gap: '20px',
-                marginBottom: '30px'
-              }}>
+              {/* Mensajes */}
+              {message.text && (
                 <div style={{
-                  background: 'white',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #667eea'
-                }}>
-                  <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1f2937' }}>
-                    {getUserStats().total}
-                  </div>
-                  <div style={{ color: '#6b7280', fontSize: '14px' }}>Total Usuarios</div>
-                </div>
-
-                <div style={{
-                  background: 'white',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #3b82f6'
-                }}>
-                  <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1f2937' }}>
-                    {getUserStats().admins}
-                  </div>
-                  <div style={{ color: '#6b7280', fontSize: '14px' }}>Administradores</div>
-                </div>
-
-                <div style={{
-                  background: 'white',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #22c55e'
-                }}>
-                  <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1f2937' }}>
-                    {getUserStats().trabajadores}
-                  </div>
-                  <div style={{ color: '#6b7280', fontSize: '14px' }}>Trabajadores</div>
-                </div>
-              </div>
-
-              {/* SECCIÓN DE BOTONES CON EXPORTACIÓN PDF */}
-              <div style={{
-                display: 'flex',
-                gap: '10px',
-                flexWrap: 'wrap',
-                marginBottom: '20px'
-              }}>
-                {/* Botón crear usuario */}
-                <button
-                  onClick={() => {
-                    setShowCreateForm(!showCreateForm);
-                    setShowEditUserForm(false);
-                    setEditingUser(null);
-                    setFormData({
-                      rut: '',
-                      email: '',
-                      password: '',
-                      name: '',
-                      role: 'trabajador',
-                      phone: '',
-                      vehicleId: '',
-                      localidad: '',
-                      recoveryPin: '',
-                      licenciaConducir: '',
-                      fechaVencimientoLicencia: '' // AGREGAR ESTOS DOS CAMPOS
-                    });
-                  }}
-                  style={{
-                    padding: '12px 24px',
-                    background: showCreateForm
-                      ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)'
-                      : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.3s ease',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                  }}
-                >
-                  {showCreateForm ? '✖ Cancelar' : '➕ Crear Nuevo Usuario'}
-                </button>
-
-                {/* NUEVO BOTÓN DE EXPORTACIÓN A PDF */}
-                <button
-                  onClick={handleExportUsersPDF}
-                  style={{
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.3s ease',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                  }}
-                >
-                  📄 Exportar a PDF
-                </button>
-
-                {/* OPCIONAL: Botón de exportación a Excel */}
-                <button
-                  onClick={() => {
-                    // Aquí puedes agregar exportación a Excel en el futuro
-                    setMessage({
-                      type: 'info',
-                      text: '📊 Función de exportación a Excel próximamente disponible'
-                    });
-                  }}
-                  style={{
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    transition: 'all 0.3s ease',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
-                  }}
-                >
-                  📊 Exportar a Excel
-                </button>
-
-                {/* Contador de registros */}
-                <div style={{
-                  padding: '12px 24px',
-                  background: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
+                  padding: '12px',
                   borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  marginLeft: 'auto'
+                  marginBottom: '20px',
+                  background: message.type === 'success' ? '#dcfce7' : '#fee2e2',
+                  border: `1px solid ${message.type === 'success' ? '#86efac' : '#fecaca'}`,
+                  color: message.type === 'success' ? '#166534' : '#991b1b'
                 }}>
-                  <span style={{ fontSize: '14px', color: '#6b7280' }}>
-                    Total: <strong style={{ color: '#1f2937' }}>{users.length}</strong> usuarios
-                  </span>
+                  {message.text}
                 </div>
-              </div>
+              )}
 
-              {/* Formulario de creación de usuario */}
-              {showCreateForm && !showEditUserForm && (
+              {/* Mensaje para crear zona desde solicitud */}
+              {solicitudParaZona && (
                 <div style={{
-                  background: 'white',
-                  padding: '30px',
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                  marginBottom: '30px'
+                  padding: '15px',
+                  borderRadius: '8px',
+                  marginBottom: '20px',
+                  background: '#dbeafe',
+                  border: '2px solid #3b82f6',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '10px'
                 }}>
-                  <h2 style={{ margin: '0 0 20px 0', color: '#1f2937', fontSize: '20px' }}>
-                    Crear Nuevo Usuario
-                  </h2>
-
-                  <form onSubmit={handleCreateUser}>
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                      gap: '20px'
-                    }}>
-                      {/* RUT */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          RUT *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.rut}
-                          onChange={(e) => {
-                            const rutFormateado = formatearRUT(e.target.value);
-                            setFormData({ ...formData, rut: rutFormateado });
-                          }}
-                          onBlur={(e) => {
-                            if (formData.rut && !validarRUT(formData.rut)) {
-                              setMessage({ type: 'error', text: 'RUT inválido. Verifique el dígito verificador.' });
-                            } else {
-                              setMessage({ type: '', text: '' });
-                            }
-                          }}
-                          placeholder="12.345.678-9"
-                          maxLength="12"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      {/* Nombre Completo */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Nombre Completo *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      {/* Correo Electrónico */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Correo Electrónico *
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={formData.email}
-                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      {/* PIN de Recuperación */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          PIN de Recuperación (4 dígitos) *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          maxLength="4"
-                          pattern="[0-9]{4}"
-                          value={formData.recoveryPin}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/\D/g, '');
-                            setFormData({ ...formData, recoveryPin: value });
-                          }}
-                          placeholder="Ej: 1234"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                        <small style={{ color: '#6b7280', fontSize: '11px' }}>
-                          Este PIN se usará para recuperar la contraseña
-                        </small>
-                      </div>
-
-                      {/* SECCIÓN DE LICENCIAS MÚLTIPLES */}
-                      <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Licencias de Conducir
-                          <span style={{
-                            marginLeft: '8px',
-                            fontSize: '12px',
-                            color: '#6b7280'
-                          }}>
-                            (Puede seleccionar múltiples)
-                          </span>
-                        </label>
-
-                        <div style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '10px',
-                          padding: '10px',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          background: '#f9fafb'
-                        }}>
-                          {['B', 'C', 'A1', 'A2', 'A3', 'A4', 'A5', 'D', 'E', 'F'].map(licencia => (
-                            <label key={licencia} style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              padding: '5px 10px',
-                              background: formData.licenciasConducir?.includes(licencia) ? '#3b82f6' : 'white',
-                              color: formData.licenciasConducir?.includes(licencia) ? 'white' : '#374151',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              border: '1px solid #d1d5db',
-                              transition: 'all 0.2s'
-                            }}>
-                              <input
-                                type="checkbox"
-                                value={licencia}
-                                checked={formData.licenciasConducir?.includes(licencia) || false}
-                                onChange={(e) => {
-                                  const newLicencias = e.target.checked
-                                    ? [...(formData.licenciasConducir || []), licencia]
-                                    : formData.licenciasConducir.filter(l => l !== licencia);
-                                  setFormData({ ...formData, licenciasConducir: newLicencias });
-                                }}
-                                style={{ display: 'none' }}
-                              />
-                              <span style={{ fontWeight: '500' }}>
-                                Clase {licencia}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                        <small style={{ color: '#6b7280', fontSize: '11px', display: 'block', marginTop: '5px' }}>
-                          B: Particulares | C: Motos | A1-A5: Profesionales | D: Maquinaria | E: Tracción animal | F: Discapacidad
-                        </small>
-                      </div>
-
-                      {/* FECHA DE VENCIMIENTO DE LICENCIA */}
-                      {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '8px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Fecha Vencimiento Licencia
-                            <span style={{
-                              marginLeft: '8px',
-                              fontSize: '12px',
-                              color: '#6b7280'
-                            }}>
-                              (Se enviará alerta 2 semanas antes)
-                            </span>
-                          </label>
-                          <input
-                            type="date"
-                            value={formData.fechaVencimientoLicencia}
-                            onChange={(e) => {
-                              setFormData({ ...formData, fechaVencimientoLicencia: e.target.value });
-
-                              // Verificar si está próxima a vencer
-                              const fechaVencimiento = new Date(e.target.value);
-                              const hoy = new Date();
-                              const diasRestantes = Math.ceil((fechaVencimiento - hoy) / (1000 * 60 * 60 * 24));
-
-                              if (diasRestantes <= 14 && diasRestantes >= 0) {
-                                setMessage({
-                                  type: 'warning',
-                                  text: `⚠️ La licencia vence en ${diasRestantes} días`
-                                });
-                              } else if (diasRestantes < 0) {
-                                setMessage({
-                                  type: 'error',
-                                  text: '❌ La licencia está vencida'
-                                });
-                              }
-                            }}
-                            min={new Date().toISOString().split('T')[0]}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      {/* OBSERVACIONES DE LICENCIA - NUEVO */}
-                      {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
-                        <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '8px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Observaciones/Restricciones de Licencia
-                            <span style={{
-                              marginLeft: '8px',
-                              fontSize: '12px',
-                              color: '#6b7280'
-                            }}>
-                              (Lentes, audífonos, restricciones médicas, etc.)
-                            </span>
-                          </label>
-                          <textarea
-                            value={formData.observacionesLicencia}
-                            onChange={(e) => setFormData({ ...formData, observacionesLicencia: e.target.value })}
-                            placeholder="Ej: Debe usar lentes, Restricción horaria nocturna, Solo vehículos automáticos, etc."
-                            rows={3}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px',
-                              resize: 'none',  // ← ESTA ES LA LÍNEA CLAVE
-                              overflow: 'auto', // Agrega scroll si el contenido es muy largo
-                              minHeight: '80px', // Altura mínima
-                              maxHeight: '200px' // Altura máxima antes de mostrar scroll
-                            }}
-                          />
-                          <div style={{
-                            marginTop: '10px',
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: '10px'
-                          }}>
-                            {/* Botones rápidos para restricciones comunes */}
-                            <span style={{ fontSize: '12px', color: '#6b7280' }}>Agregar rápido:</span>
-                            {['Usa lentes 👓', 'Usa audífonos 🦻', 'Solo automático 🚗', 'Sin nocturno 🌙'].map(restriccion => (
-                              <button
-                                key={restriccion}
-                                type="button"
-                                onClick={() => {
-                                  const currentObs = formData.observacionesLicencia || '';
-                                  const newObs = currentObs ? `${currentObs}, ${restriccion}` : restriccion;
-                                  setFormData({ ...formData, observacionesLicencia: newObs });
-                                }}
-                                style={{
-                                  padding: '4px 8px',
-                                  background: '#f3f4f6',
-                                  border: '1px solid #d1d5db',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                {restriccion}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ESTADO DE BLOQUEO - NUEVO */}
-                      {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
-                        <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                          <div style={{
-                            padding: '15px',
-                            background: formData.licenciaBloqueada ? '#fee2e2' : '#f9fafb',
-                            borderRadius: '8px',
-                            border: formData.licenciaBloqueada ? '2px solid #ef4444' : '1px solid #e5e7eb'
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: formData.licenciaBloqueada ? '10px' : '0'
-                            }}>
-                              <label style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                fontSize: '14px',
-                                fontWeight: '500',
-                                color: formData.licenciaBloqueada ? '#991b1b' : '#374151'
-                              }}>
-                                <input
-                                  type="checkbox"
-                                  checked={formData.licenciaBloqueada}
-                                  onChange={(e) => {
-                                    setFormData({
-                                      ...formData,
-                                      licenciaBloqueada: e.target.checked,
-                                      fechaBloqueo: e.target.checked ? new Date().toISOString() : ''
-                                    });
-                                  }}
-                                  style={{
-                                    width: '20px',
-                                    height: '20px',
-                                    cursor: 'pointer'
-                                  }}
-                                />
-                                {formData.licenciaBloqueada ? '🚫 LICENCIA BLOQUEADA' : '✅ Licencia Habilitada'}
-                              </label>
-                              {formData.licenciaBloqueada && (
-                                <span style={{
-                                  fontSize: '12px',
-                                  color: '#991b1b',
-                                  fontWeight: '600'
-                                }}>
-                                  ⚠️ NO PUEDE CONDUCIR
-                                </span>
-                              )}
-                            </div>
-
-                            {formData.licenciaBloqueada && (
-                              <div>
-                                <label style={{
-                                  display: 'block',
-                                  marginBottom: '6px',
-                                  fontSize: '13px',
-                                  fontWeight: '500',
-                                  color: '#991b1b'
-                                }}>
-                                  Motivo del bloqueo *
-                                </label>
-                                <select
-                                  value={formData.motivoBloqueo}
-                                  onChange={(e) => setFormData({ ...formData, motivoBloqueo: e.target.value })}
-                                  required={formData.licenciaBloqueada}
-                                  style={{
-                                    width: '100%',
-                                    padding: '8px',
-                                    border: '1px solid #ef4444',
-                                    borderRadius: '4px',
-                                    fontSize: '13px',
-                                    marginBottom: '10px'
-                                  }}
-                                >
-                                  <option value="">-- Seleccionar motivo --</option>
-                                  <option value="parte_pendiente">Parte/Multa pendiente</option>
-                                  <option value="suspension_judicial">Suspensión judicial</option>
-                                  <option value="vencida">Licencia vencida</option>
-                                  <option value="examen_medico">Pendiente examen médico</option>
-                                  <option value="incapacidad_temporal">Incapacidad temporal</option>
-                                  <option value="investigacion">Bajo investigación</option>
-                                  <option value="otro">Otro motivo</option>
-                                </select>
-
-                                {formData.motivoBloqueo === 'otro' && (
-                                  <textarea
-                                    placeholder="Especifique el motivo del bloqueo..."
-                                    required
-                                    rows={2}
-                                    style={{
-                                      width: '100%',
-                                      padding: '8px',
-                                      border: '1px solid #ef4444',
-                                      borderRadius: '4px',
-                                      fontSize: '13px'
-                                    }}
-                                  />
-                                )}
-
-                                <div style={{
-                                  marginTop: '10px',
-                                  padding: '10px',
-                                  background: '#fef2f2',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  color: '#7f1d1d'
-                                }}>
-                                  <strong>⚠️ Importante:</strong> Al bloquear la licencia, el usuario no podrá ser asignado a ningún vehículo hasta que se desbloquee.
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Contraseña */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Contraseña *
-                        </label>
-                        <input
-                          type="password"
-                          required
-                          minLength="6"
-                          value={formData.password}
-                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          placeholder="Mínimo 6 caracteres"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      {/* Rol */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Rol *
-                        </label>
-                        <select
-                          required
-                          value={formData.role}
-                          onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        >
-                          <option value="trabajador">👷 Trabajador</option>
-                          <option value="admin">👨‍💼 Administrador</option>
-                          <option value="superadmin">🔐 Super Admin</option>
-                          <option value="junta_vecinos">🏘️ Junta de Vecinos</option>
-                        </select>
-                      </div>
-
-                      {/* Teléfono */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Teléfono
-                        </label>
-                        <input
-                          type="tel"
-                          value={formData.phone}
-                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                          placeholder="+56 9 XXXX XXXX"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      {/* Localidad (solo para Junta de Vecinos) */}
-                      {formData.role === 'junta_vecinos' && (
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '8px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Localidad/Sector *
-                          </label>
-                          <input
-                            type="text"
-                            required={formData.role === 'junta_vecinos'}
-                            value={formData.localidad || ''}
-                            onChange={(e) => setFormData({ ...formData, localidad: e.target.value })}
-                            placeholder="Ej: Sector Norte, Villa Los Aromos"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-
+                  <div>
+                    <strong style={{ color: '#1e40af' }}>
+                      ✅ Solicitud aprobada: {solicitudParaZona.asunto}
+                    </strong>
+                    <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#1e3a8a' }}>
+                      Ahora puedes crear una zona de trabajo basada en esta solicitud
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
                     <button
-                      type="submit"
-                      disabled={loading || (formData.licenciaBloqueada && !formData.motivoBloqueo)}
+                      onClick={crearZonaDesdeSolicitud}
                       style={{
-                        marginTop: '20px',
-                        padding: '12px 24px',
-                        background: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? '#9ca3af' : '#22c55e',
+                        padding: '10px 20px',
+                        background: '#22c55e',
                         color: 'white',
                         border: 'none',
                         borderRadius: '6px',
-                        fontSize: '16px',
-                        fontWeight: '500',
-                        cursor: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? 'not-allowed' : 'pointer'
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '600'
                       }}
                     >
-                      {loading ? 'Creando...' : '✅ Crear Usuario'}
+                      🗺️ Crear Zona
                     </button>
-                  </form>
+                    <button
+                      onClick={() => setSolicitudParaZona(null)}
+                      style={{
+                        padding: '10px 20px',
+                        background: '#6b7280',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
               )}
-
-
-              {/* Formulario de edición de usuario ACTUALIZADO */}
-              {showEditUserForm && editingUser && (
+              {/* CONTENIDO DE INICIO */}
+              {activeTab === 'inicio' && (
                 <div style={{
-                  background: 'white',
-                  padding: '30px',
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                  marginBottom: '30px'
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: 'calc(100vh - 200px)',
+                  padding: '40px 20px'
                 }}>
-                  <h2 style={{ margin: '0 0 20px 0', color: '#1f2937', fontSize: '20px' }}>
-                    ✏️ Editar Usuario
-                  </h2>
+                  <div style={{
+                    textAlign: 'center',
+                    animation: 'fadeIn 0.5s ease-in'
+                  }}>
+                    <style>
+                      {`
+          @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+          }
+        `}
+                    </style>
 
-                  <form onSubmit={handleUpdateUser}>
+                    {/* Logo de la Municipalidad */}
+                    <img
+                      src="/logoQuillon.jpg" // REEMPLAZA CON TU LOGO
+                      alt="Municipalidad de Quillón"
+                      style={{
+                        width: '300px',
+                        height: 'auto',
+                        objectFit: 'contain',
+                        marginBottom: '30px',
+                        filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.1))'
+                      }}
+                      onError={(e) => {
+                        // Si no encuentra el logo, muestra un placeholder
+                        e.target.style.display = 'none';
+                        e.target.parentElement.innerHTML += `
+            <div style="
+              width: 300px;
+              height: 300px;
+              margin: 0 auto 30px;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              border-radius: 20px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              box-shadow: 0 20px 40px rgba(102, 126, 234, 0.2);
+            ">
+              <span style="font-size: 120px; color: white;">🏛️</span>
+            </div>
+          `;
+                      }}
+                    />
+
+                  </div>
+                </div>
+              )}
+              {/* CONTENIDO DE USUARIOS */}
+              {activeTab === 'users' && (
+                <>
+                  <h1 style={{
+                    margin: '0 0 30px 0',
+                    color: '#1e293b',
+                    fontSize: '28px',
+                    fontWeight: '600'
+                  }}>
+                    👥 Gestión de Usuarios
+                  </h1>
+
+                  {/* Estadísticas de usuarios */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '150px' : '200px'}, 1fr))`,
+                    gap: '20px',
+                    marginBottom: '30px'
+                  }}>
                     <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                      gap: '20px'
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #667eea'
                     }}>
-                      {/* RUT */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          RUT *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.rut}
-                          onChange={(e) => {
-                            const rutFormateado = formatearRUT(e.target.value);
-                            setFormData({ ...formData, rut: rutFormateado });
-                          }}
-                          onBlur={(e) => {
-                            if (formData.rut && !validarRUT(formData.rut)) {
-                              setMessage({ type: 'error', text: 'RUT inválido. Verifique el dígito verificador.' });
-                            } else {
-                              setMessage({ type: '', text: '' });
-                            }
-                          }}
-                          placeholder="12.345.678-9"
-                          maxLength="12"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
+                      <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getUserStats().total}
                       </div>
+                      <div style={{ color: '#6b7280', fontSize: '14px' }}>Total Usuarios</div>
+                    </div>
 
-                      {/* Nombre Completo */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Nombre Completo *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
+                    <div style={{
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #3b82f6'
+                    }}>
+                      <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getUserStats().admins}
                       </div>
+                      <div style={{ color: '#6b7280', fontSize: '14px' }}>Administradores</div>
+                    </div>
 
-                      {/* Correo Electrónico */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Correo Electrónico
-                        </label>
-                        <input
-                          type="email"
-                          value={formData.email}
-                          disabled
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            background: '#f3f4f6',
-                            cursor: 'not-allowed'
-                          }}
-                        />
-                        <small style={{ color: '#6b7280', fontSize: '12px' }}>
-                          El email no se puede modificar
-                        </small>
+                    <div style={{
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #22c55e'
+                    }}>
+                      <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getUserStats().trabajadores}
                       </div>
+                      <div style={{ color: '#6b7280', fontSize: '14px' }}>Trabajadores</div>
+                    </div>
 
-                      {/* PIN de Recuperación */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Nuevo PIN de Recuperación (Opcional)
-                        </label>
-                        <input
-                          type="text"
-                          maxLength="4"
-                          pattern="[0-9]{4}"
-                          value={formData.recoveryPin}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/\D/g, '');
-                            setFormData({ ...formData, recoveryPin: value });
-                          }}
-                          placeholder="Dejar vacío para mantener el actual"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                        <small style={{ color: '#6b7280', fontSize: '11px' }}>
-                          Solo ingrese si desea cambiar el PIN actual
-                        </small>
+                    <div style={{
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #6b7280'
+                    }}>
+                      <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getUserStats().monitores}
                       </div>
+                      <div style={{ color: '#6b7280', fontSize: '14px' }}>Monitores</div>
+                    </div>
+                  </div>
 
-                      {/* SECCIÓN DE LICENCIAS MÚLTIPLES - AGREGADO */}
-                      <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}>
-                          Licencias de Conducir
-                          <span style={{
-                            marginLeft: '8px',
-                            fontSize: '12px',
-                            color: '#6b7280'
-                          }}>
-                            (Puede seleccionar múltiples)
-                          </span>
-                        </label>
+                  {/* SECCIÓN DE BOTONES CON EXPORTACIÓN PDF */}
+                  <div style={{
+                    display: 'flex',
+                    gap: '10px',
+                    flexWrap: 'wrap',
+                    marginBottom: '20px'
+                  }}>
+                    {/* Botón crear usuario */}
+                    <button
+                      onClick={() => {
+                        setShowCreateForm(!showCreateForm);
+                        setShowEditUserForm(false);
+                        setEditingUser(null);
+                        setFormData({
+                          rut: '',
+                          email: '',
+                          password: '',
+                          name: '',
+                          role: 'trabajador',
+                          phone: '',
+                          vehicleId: '',
+                          localidad: '',
+                          recoveryPin: '',
+                          licenciaConducir: '',
+                          fechaVencimientoLicencia: '' // AGREGAR ESTOS DOS CAMPOS
+                        });
+                      }}
+                      style={{
+                        padding: '12px 24px',
+                        background: showCreateForm
+                          ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)'
+                          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '16px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                      }}
+                    >
+                      {showCreateForm ? '✖ Cancelar' : '➕ Crear Nuevo Usuario'}
+                    </button>
 
+                    {/* NUEVO BOTÓN DE EXPORTACIÓN A PDF */}
+                    <button
+                      onClick={handleExportUsersPDF}
+                      style={{
+                        padding: '12px 24px',
+                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '16px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                      }}
+                    >
+                      📄 Exportar a PDF
+                    </button>
+
+                    {/* OPCIONAL: Botón de exportación a Excel */}
+                    <button
+                      onClick={() => {
+                        // Aquí puedes agregar exportación a Excel en el futuro
+                        setMessage({
+                          type: 'info',
+                          text: '📊 Función de exportación a Excel próximamente disponible'
+                        });
+                      }}
+                      style={{
+                        padding: '12px 24px',
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '16px',
+                        fontWeight: '500',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                      }}
+                    >
+                      📊 Exportar a Excel
+                    </button>
+
+                    {/* Contador de registros */}
+                    <div style={{
+                      padding: '12px 24px',
+                      background: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginLeft: 'auto'
+                    }}>
+                      <span style={{ fontSize: '14px', color: '#6b7280' }}>
+                        Total: <strong style={{ color: '#1f2937' }}>{users.length}</strong> usuarios
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Formulario de creación de usuario */}
+                  {showCreateForm && !showEditUserForm && (
+                    <div style={{
+                      background: 'white',
+                      padding: '30px',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                      marginBottom: '30px'
+                    }}>
+                      <h2 style={{ margin: '0 0 20px 0', color: '#1f2937', fontSize: '20px' }}>
+                        Crear Nuevo Usuario
+                      </h2>
+
+                      <form onSubmit={handleCreateUser}>
                         <div style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '10px',
-                          padding: '10px',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          background: '#f9fafb'
+                          display: 'grid',
+                          gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                          gap: '20px'
                         }}>
-                          {['B', 'C', 'A1', 'A2', 'A3', 'A4', 'A5', 'D', 'E', 'F'].map(licencia => (
-                            <label key={licencia} style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              padding: '5px 10px',
-                              background: formData.licenciasConducir?.includes(licencia) ? '#3b82f6' : 'white',
-                              color: formData.licenciasConducir?.includes(licencia) ? 'white' : '#374151',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              border: '1px solid #d1d5db',
-                              transition: 'all 0.2s'
+                          {/* RUT */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
                             }}>
-                              <input
-                                type="checkbox"
-                                value={licencia}
-                                checked={formData.licenciasConducir?.includes(licencia) || false}
-                                onChange={(e) => {
-                                  const newLicencias = e.target.checked
-                                    ? [...(formData.licenciasConducir || []), licencia]
-                                    : formData.licenciasConducir.filter(l => l !== licencia);
-                                  setFormData({ ...formData, licenciasConducir: newLicencias });
-                                }}
-                                style={{ display: 'none' }}
-                              />
-                              <span style={{ fontWeight: '500' }}>
-                                Clase {licencia}
+                              RUT *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={formData.rut}
+                              onChange={(e) => {
+                                const rutFormateado = formatearRUT(e.target.value);
+                                setFormData({ ...formData, rut: rutFormateado });
+                              }}
+                              onBlur={(e) => {
+                                if (formData.rut && !validarRUT(formData.rut)) {
+                                  setMessage({ type: 'error', text: 'RUT inválido. Verifique el dígito verificador.' });
+                                } else {
+                                  setMessage({ type: '', text: '' });
+                                }
+                              }}
+                              placeholder="12.345.678-9"
+                              maxLength="12"
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* Nombre Completo */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Nombre Completo *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={formData.name}
+                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* Correo Electrónico */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Correo Electrónico *
+                            </label>
+                            <input
+                              type="email"
+                              required
+                              value={formData.email}
+                              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* PIN de Recuperación */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              PIN de Recuperación (4 dígitos) *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              maxLength="4"
+                              pattern="[0-9]{4}"
+                              value={formData.recoveryPin}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/\D/g, '');
+                                setFormData({ ...formData, recoveryPin: value });
+                              }}
+                              placeholder="Ej: 1234"
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                            <small style={{ color: '#6b7280', fontSize: '11px' }}>
+                              Este PIN se usará para recuperar la contraseña
+                            </small>
+                          </div>
+
+                          {/* SECCIÓN DE LICENCIAS MÚLTIPLES */}
+                          <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Licencias de Conducir
+                              <span style={{
+                                marginLeft: '8px',
+                                fontSize: '12px',
+                                color: '#6b7280'
+                              }}>
+                                (Puede seleccionar múltiples)
                               </span>
                             </label>
-                          ))}
-                        </div>
-                        <small style={{ color: '#6b7280', fontSize: '11px', display: 'block', marginTop: '5px' }}>
-                          B: Particulares | C: Motos | A1-A5: Profesionales | D: Maquinaria | E: Tracción animal | F: Discapacidad
-                        </small>
-                      </div>
 
-                      {/* FECHA DE VENCIMIENTO DE LICENCIA - AGREGADO */}
-                      {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '8px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Fecha Vencimiento Licencia
-                            <span style={{
-                              marginLeft: '8px',
-                              fontSize: '12px',
-                              color: '#6b7280'
+                            <div style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: '10px',
+                              padding: '10px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              background: '#f9fafb'
                             }}>
-                              (Se enviará alerta 2 semanas antes)
-                            </span>
-                          </label>
-                          <input
-                            type="date"
-                            value={formData.fechaVencimientoLicencia}
-                            onChange={(e) => {
-                              setFormData({ ...formData, fechaVencimientoLicencia: e.target.value });
+                              {['B', 'C', 'A1', 'A2', 'A3', 'A4', 'A5', 'D', 'E', 'F'].map(licencia => (
+                                <label key={licencia} style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  padding: '5px 10px',
+                                  background: formData.licenciasConducir?.includes(licencia) ? '#3b82f6' : 'white',
+                                  color: formData.licenciasConducir?.includes(licencia) ? 'white' : '#374151',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  border: '1px solid #d1d5db',
+                                  transition: 'all 0.2s'
+                                }}>
+                                  <input
+                                    type="checkbox"
+                                    value={licencia}
+                                    checked={formData.licenciasConducir?.includes(licencia) || false}
+                                    onChange={(e) => {
+                                      const newLicencias = e.target.checked
+                                        ? [...(formData.licenciasConducir || []), licencia]
+                                        : formData.licenciasConducir.filter(l => l !== licencia);
+                                      setFormData({ ...formData, licenciasConducir: newLicencias });
+                                    }}
+                                    style={{ display: 'none' }}
+                                  />
+                                  <span style={{ fontWeight: '500' }}>
+                                    Clase {licencia}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            <small style={{ color: '#6b7280', fontSize: '11px', display: 'block', marginTop: '5px' }}>
+                              B: Particulares | C: Motos | A1-A5: Profesionales | D: Maquinaria | E: Tracción animal | F: Discapacidad
+                            </small>
+                          </div>
 
-                              // Verificar si está próxima a vencer
-                              const fechaVencimiento = new Date(e.target.value);
+                          {/* FECHA DE VENCIMIENTO DE LICENCIA */}
+                          {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Fecha Vencimiento Licencia
+                                <span style={{
+                                  marginLeft: '8px',
+                                  fontSize: '12px',
+                                  color: '#6b7280'
+                                }}>
+                                  (Se enviará alerta 2 semanas antes)
+                                </span>
+                              </label>
+                              <input
+                                type="date"
+                                value={formData.fechaVencimientoLicencia}
+                                onChange={(e) => {
+                                  setFormData({ ...formData, fechaVencimientoLicencia: e.target.value });
+
+                                  // Verificar si está próxima a vencer
+                                  const fechaVencimiento = new Date(e.target.value);
+                                  const hoy = new Date();
+                                  const diasRestantes = Math.ceil((fechaVencimiento - hoy) / (1000 * 60 * 60 * 24));
+
+                                  if (diasRestantes <= 14 && diasRestantes >= 0) {
+                                    setMessage({
+                                      type: 'warning',
+                                      text: `⚠️ La licencia vence en ${diasRestantes} días`
+                                    });
+                                  } else if (diasRestantes < 0) {
+                                    setMessage({
+                                      type: 'error',
+                                      text: '❌ La licencia está vencida'
+                                    });
+                                  }
+                                }}
+                                min={new Date().toISOString().split('T')[0]}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {/* OBSERVACIONES DE LICENCIA - NUEVO */}
+                          {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
+                            <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Observaciones/Restricciones de Licencia
+                                <span style={{
+                                  marginLeft: '8px',
+                                  fontSize: '12px',
+                                  color: '#6b7280'
+                                }}>
+                                  (Lentes, audífonos, restricciones médicas, etc.)
+                                </span>
+                              </label>
+                              <textarea
+                                value={formData.observacionesLicencia}
+                                onChange={(e) => setFormData({ ...formData, observacionesLicencia: e.target.value })}
+                                placeholder="Ej: Debe usar lentes, Restricción horaria nocturna, Solo vehículos automáticos, etc."
+                                rows={3}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  resize: 'none',  // ← ESTA ES LA LÍNEA CLAVE
+                                  overflow: 'auto', // Agrega scroll si el contenido es muy largo
+                                  minHeight: '80px', // Altura mínima
+                                  maxHeight: '200px' // Altura máxima antes de mostrar scroll
+                                }}
+                              />
+                              <div style={{
+                                marginTop: '10px',
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: '10px'
+                              }}>
+                                {/* Botones rápidos para restricciones comunes */}
+                                <span style={{ fontSize: '12px', color: '#6b7280' }}>Agregar rápido:</span>
+                                {['Usa lentes 👓', 'Usa audífonos 🦻', 'Solo automático 🚗', 'Sin nocturno 🌙'].map(restriccion => (
+                                  <button
+                                    key={restriccion}
+                                    type="button"
+                                    onClick={() => {
+                                      const currentObs = formData.observacionesLicencia || '';
+                                      const newObs = currentObs ? `${currentObs}, ${restriccion}` : restriccion;
+                                      setFormData({ ...formData, observacionesLicencia: newObs });
+                                    }}
+                                    style={{
+                                      padding: '4px 8px',
+                                      background: '#f3f4f6',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    {restriccion}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* ESTADO DE BLOQUEO - NUEVO */}
+                          {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
+                            <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                              <div style={{
+                                padding: '15px',
+                                background: formData.licenciaBloqueada ? '#fee2e2' : '#f9fafb',
+                                borderRadius: '8px',
+                                border: formData.licenciaBloqueada ? '2px solid #ef4444' : '1px solid #e5e7eb'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: formData.licenciaBloqueada ? '10px' : '0'
+                                }}>
+                                  <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    fontSize: '14px',
+                                    fontWeight: '500',
+                                    color: formData.licenciaBloqueada ? '#991b1b' : '#374151'
+                                  }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={formData.licenciaBloqueada}
+                                      onChange={(e) => {
+                                        setFormData({
+                                          ...formData,
+                                          licenciaBloqueada: e.target.checked,
+                                          fechaBloqueo: e.target.checked ? new Date().toISOString() : ''
+                                        });
+                                      }}
+                                      style={{
+                                        width: '20px',
+                                        height: '20px',
+                                        cursor: 'pointer'
+                                      }}
+                                    />
+                                    {formData.licenciaBloqueada ? '🚫 LICENCIA BLOQUEADA' : '✅ Licencia Habilitada'}
+                                  </label>
+                                  {formData.licenciaBloqueada && (
+                                    <span style={{
+                                      fontSize: '12px',
+                                      color: '#991b1b',
+                                      fontWeight: '600'
+                                    }}>
+                                      ⚠️ NO PUEDE CONDUCIR
+                                    </span>
+                                  )}
+                                </div>
+
+                                {formData.licenciaBloqueada && (
+                                  <div>
+                                    <label style={{
+                                      display: 'block',
+                                      marginBottom: '6px',
+                                      fontSize: '13px',
+                                      fontWeight: '500',
+                                      color: '#991b1b'
+                                    }}>
+                                      Motivo del bloqueo *
+                                    </label>
+                                    <select
+                                      value={formData.motivoBloqueo}
+                                      onChange={(e) => setFormData({ ...formData, motivoBloqueo: e.target.value })}
+                                      required={formData.licenciaBloqueada}
+                                      style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        border: '1px solid #ef4444',
+                                        borderRadius: '4px',
+                                        fontSize: '13px',
+                                        marginBottom: '10px'
+                                      }}
+                                    >
+                                      <option value="">-- Seleccionar motivo --</option>
+                                      <option value="parte_pendiente">Parte/Multa pendiente</option>
+                                      <option value="suspension_judicial">Suspensión judicial</option>
+                                      <option value="vencida">Licencia vencida</option>
+                                      <option value="examen_medico">Pendiente examen médico</option>
+                                      <option value="incapacidad_temporal">Incapacidad temporal</option>
+                                      <option value="investigacion">Bajo investigación</option>
+                                      <option value="otro">Otro motivo</option>
+                                    </select>
+
+                                    {formData.motivoBloqueo === 'otro' && (
+                                      <textarea
+                                        placeholder="Especifique el motivo del bloqueo..."
+                                        required
+                                        rows={2}
+                                        style={{
+                                          width: '100%',
+                                          padding: '8px',
+                                          border: '1px solid #ef4444',
+                                          borderRadius: '4px',
+                                          fontSize: '13px'
+                                        }}
+                                      />
+                                    )}
+
+                                    <div style={{
+                                      marginTop: '10px',
+                                      padding: '10px',
+                                      background: '#fef2f2',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      color: '#7f1d1d'
+                                    }}>
+                                      <strong>⚠️ Importante:</strong> Al bloquear la licencia, el usuario no podrá ser asignado a ningún vehículo hasta que se desbloquee.
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Contraseña */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Contraseña *
+                            </label>
+                            <input
+                              type="password"
+                              required
+                              minLength="6"
+                              value={formData.password}
+                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                              placeholder="Mínimo 6 caracteres"
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* Rol */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Rol *
+                            </label>
+                            <select
+                              required
+                              value={formData.role}
+                              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            >
+                              <option value="trabajador">👷 Trabajador</option>
+                              <option value="admin">👨‍💼 Administrador</option>
+                              <option value="superadmin">🔐 Super Admin</option>
+                              <option value="monitor">📊 Monitor</option>
+                            </select>
+                          </div>
+
+                          {/* Teléfono */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Teléfono
+                            </label>
+                            <input
+                              type="tel"
+                              value={formData.phone}
+                              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                              placeholder="+56 9 XXXX XXXX"
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* Localidad (solo para Junta de Vecinos) */}
+                          {formData.role === 'junta_vecinos' && (
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Localidad/Sector *
+                              </label>
+                              <input
+                                type="text"
+                                required={formData.role === 'junta_vecinos'}
+                                value={formData.localidad || ''}
+                                onChange={(e) => setFormData({ ...formData, localidad: e.target.value })}
+                                placeholder="Ej: Sector Norte, Villa Los Aromos"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={loading || (formData.licenciaBloqueada && !formData.motivoBloqueo)}
+                          style={{
+                            marginTop: '20px',
+                            padding: '12px 24px',
+                            background: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? '#9ca3af' : '#22c55e',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '16px',
+                            fontWeight: '500',
+                            cursor: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {loading ? 'Creando...' : '✅ Crear Usuario'}
+                        </button>
+                      </form>
+                    </div>
+                  )}
+
+
+                  {/* Formulario de edición de usuario ACTUALIZADO */}
+                  {showEditUserForm && editingUser && (
+                    <div style={{
+                      background: 'white',
+                      padding: '30px',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                      marginBottom: '30px'
+                    }}>
+                      <h2 style={{ margin: '0 0 20px 0', color: '#1f2937', fontSize: '20px' }}>
+                        ✏️ Editar Usuario
+                      </h2>
+
+                      <form onSubmit={handleUpdateUser}>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                          gap: '20px'
+                        }}>
+                          {/* RUT */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              RUT *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={formData.rut}
+                              onChange={(e) => {
+                                const rutFormateado = formatearRUT(e.target.value);
+                                setFormData({ ...formData, rut: rutFormateado });
+                              }}
+                              onBlur={(e) => {
+                                if (formData.rut && !validarRUT(formData.rut)) {
+                                  setMessage({ type: 'error', text: 'RUT inválido. Verifique el dígito verificador.' });
+                                } else {
+                                  setMessage({ type: '', text: '' });
+                                }
+                              }}
+                              placeholder="12.345.678-9"
+                              maxLength="12"
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* Nombre Completo */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Nombre Completo *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={formData.name}
+                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* Correo Electrónico */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Correo Electrónico
+                            </label>
+                            <input
+                              type="email"
+                              value={formData.email}
+                              disabled
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                background: '#f3f4f6',
+                                cursor: 'not-allowed'
+                              }}
+                            />
+                            <small style={{ color: '#6b7280', fontSize: '12px' }}>
+                              El email no se puede modificar
+                            </small>
+                          </div>
+
+                          {/* PIN de Recuperación */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Nuevo PIN de Recuperación (Opcional)
+                            </label>
+                            <input
+                              type="text"
+                              maxLength="4"
+                              pattern="[0-9]{4}"
+                              value={formData.recoveryPin}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/\D/g, '');
+                                setFormData({ ...formData, recoveryPin: value });
+                              }}
+                              placeholder="Dejar vacío para mantener el actual"
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                            <small style={{ color: '#6b7280', fontSize: '11px' }}>
+                              Solo ingrese si desea cambiar el PIN actual
+                            </small>
+                          </div>
+
+                          {/* SECCIÓN DE LICENCIAS MÚLTIPLES - AGREGADO */}
+                          <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Licencias de Conducir
+                              <span style={{
+                                marginLeft: '8px',
+                                fontSize: '12px',
+                                color: '#6b7280'
+                              }}>
+                                (Puede seleccionar múltiples)
+                              </span>
+                            </label>
+
+                            <div style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: '10px',
+                              padding: '10px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              background: '#f9fafb'
+                            }}>
+                              {['B', 'C', 'A1', 'A2', 'A3', 'A4', 'A5', 'D', 'E', 'F'].map(licencia => (
+                                <label key={licencia} style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  padding: '5px 10px',
+                                  background: formData.licenciasConducir?.includes(licencia) ? '#3b82f6' : 'white',
+                                  color: formData.licenciasConducir?.includes(licencia) ? 'white' : '#374151',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  border: '1px solid #d1d5db',
+                                  transition: 'all 0.2s'
+                                }}>
+                                  <input
+                                    type="checkbox"
+                                    value={licencia}
+                                    checked={formData.licenciasConducir?.includes(licencia) || false}
+                                    onChange={(e) => {
+                                      const newLicencias = e.target.checked
+                                        ? [...(formData.licenciasConducir || []), licencia]
+                                        : formData.licenciasConducir.filter(l => l !== licencia);
+                                      setFormData({ ...formData, licenciasConducir: newLicencias });
+                                    }}
+                                    style={{ display: 'none' }}
+                                  />
+                                  <span style={{ fontWeight: '500' }}>
+                                    Clase {licencia}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            <small style={{ color: '#6b7280', fontSize: '11px', display: 'block', marginTop: '5px' }}>
+                              B: Particulares | C: Motos | A1-A5: Profesionales | D: Maquinaria | E: Tracción animal | F: Discapacidad
+                            </small>
+                          </div>
+
+                          {/* FECHA DE VENCIMIENTO DE LICENCIA - AGREGADO */}
+                          {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Fecha Vencimiento Licencia
+                                <span style={{
+                                  marginLeft: '8px',
+                                  fontSize: '12px',
+                                  color: '#6b7280'
+                                }}>
+                                  (Se enviará alerta 2 semanas antes)
+                                </span>
+                              </label>
+                              <input
+                                type="date"
+                                value={formData.fechaVencimientoLicencia}
+                                onChange={(e) => {
+                                  setFormData({ ...formData, fechaVencimientoLicencia: e.target.value });
+
+                                  // Verificar si está próxima a vencer
+                                  const fechaVencimiento = new Date(e.target.value);
+                                  const hoy = new Date();
+                                  const diasRestantes = Math.ceil((fechaVencimiento - hoy) / (1000 * 60 * 60 * 24));
+
+                                  if (diasRestantes <= 14 && diasRestantes >= 0) {
+                                    setMessage({
+                                      type: 'warning',
+                                      text: `⚠️ La licencia vence en ${diasRestantes} días`
+                                    });
+                                  } else if (diasRestantes < 0) {
+                                    setMessage({
+                                      type: 'error',
+                                      text: '❌ La licencia está vencida'
+                                    });
+                                  }
+                                }}
+                                min={new Date().toISOString().split('T')[0]}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {/* OBSERVACIONES DE LICENCIA - AGREGADO */}
+                          {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
+                            <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Observaciones/Restricciones de Licencia
+                                <span style={{
+                                  marginLeft: '8px',
+                                  fontSize: '12px',
+                                  color: '#6b7280'
+                                }}>
+                                  (Lentes, audífonos, restricciones médicas, etc.)
+                                </span>
+                              </label>
+                              <textarea
+                                value={formData.observacionesLicencia}
+                                onChange={(e) => setFormData({ ...formData, observacionesLicencia: e.target.value })}
+                                placeholder="Ej: Debe usar lentes, Restricción horaria nocturna, Solo vehículos automáticos, etc."
+                                rows={3}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                              <div style={{
+                                marginTop: '10px',
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: '10px'
+                              }}>
+                                <span style={{ fontSize: '12px', color: '#6b7280' }}>Agregar rápido:</span>
+                                {['Usa lentes 👓', 'Usa audífonos 🦻', 'Solo automático 🚗', 'Sin nocturno 🌙'].map(restriccion => (
+                                  <button
+                                    key={restriccion}
+                                    type="button"
+                                    onClick={() => {
+                                      const currentObs = formData.observacionesLicencia || '';
+                                      const newObs = currentObs ? `${currentObs}, ${restriccion}` : restriccion;
+                                      setFormData({ ...formData, observacionesLicencia: newObs });
+                                    }}
+                                    style={{
+                                      padding: '4px 8px',
+                                      background: '#f3f4f6',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    {restriccion}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* ESTADO DE BLOQUEO - AGREGADO */}
+                          {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
+                            <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                              <div style={{
+                                padding: '15px',
+                                background: formData.licenciaBloqueada ? '#fee2e2' : '#f9fafb',
+                                borderRadius: '8px',
+                                border: formData.licenciaBloqueada ? '2px solid #ef4444' : '1px solid #e5e7eb'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: formData.licenciaBloqueada ? '10px' : '0'
+                                }}>
+                                  <label style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    fontSize: '14px',
+                                    fontWeight: '500',
+                                    color: formData.licenciaBloqueada ? '#991b1b' : '#374151'
+                                  }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={formData.licenciaBloqueada}
+                                      onChange={(e) => {
+                                        setFormData({
+                                          ...formData,
+                                          licenciaBloqueada: e.target.checked,
+                                          fechaBloqueo: e.target.checked ? new Date().toISOString() : ''
+                                        });
+                                      }}
+                                      style={{
+                                        width: '20px',
+                                        height: '20px',
+                                        cursor: 'pointer'
+                                      }}
+                                    />
+                                    {formData.licenciaBloqueada ? '🚫 LICENCIA BLOQUEADA' : '✅ Licencia Habilitada'}
+                                  </label>
+                                  {formData.licenciaBloqueada && (
+                                    <span style={{
+                                      fontSize: '12px',
+                                      color: '#991b1b',
+                                      fontWeight: '600'
+                                    }}>
+                                      ⚠️ NO PUEDE CONDUCIR
+                                    </span>
+                                  )}
+                                </div>
+
+                                {formData.licenciaBloqueada && (
+                                  <div>
+                                    <label style={{
+                                      display: 'block',
+                                      marginBottom: '6px',
+                                      fontSize: '13px',
+                                      fontWeight: '500',
+                                      color: '#991b1b'
+                                    }}>
+                                      Motivo del bloqueo *
+                                    </label>
+                                    <select
+                                      value={formData.motivoBloqueo}
+                                      onChange={(e) => setFormData({ ...formData, motivoBloqueo: e.target.value })}
+                                      required={formData.licenciaBloqueada}
+                                      style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        border: '1px solid #ef4444',
+                                        borderRadius: '4px',
+                                        fontSize: '13px',
+                                        marginBottom: '10px'
+                                      }}
+                                    >
+                                      <option value="">-- Seleccionar motivo --</option>
+                                      <option value="parte_pendiente">Parte/Multa pendiente</option>
+                                      <option value="suspension_judicial">Suspensión judicial</option>
+                                      <option value="vencida">Licencia vencida</option>
+                                      <option value="examen_medico">Pendiente examen médico</option>
+                                      <option value="incapacidad_temporal">Incapacidad temporal</option>
+                                      <option value="investigacion">Bajo investigación</option>
+                                      <option value="otro">Otro motivo</option>
+                                    </select>
+
+                                    {formData.motivoBloqueo === 'otro' && (
+                                      <textarea
+                                        placeholder="Especifique el motivo del bloqueo..."
+                                        required
+                                        rows={2}
+                                        style={{
+                                          width: '100%',
+                                          padding: '8px',
+                                          border: '1px solid #ef4444',
+                                          borderRadius: '4px',
+                                          fontSize: '13px'
+                                        }}
+                                      />
+                                    )}
+
+                                    <div style={{
+                                      marginTop: '10px',
+                                      padding: '10px',
+                                      background: '#fef2f2',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      color: '#7f1d1d'
+                                    }}>
+                                      <strong>⚠️ Importante:</strong> Al bloquear la licencia, el usuario no podrá ser asignado a ningún vehículo hasta que se desbloquee.
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Rol */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Rol *
+                            </label>
+                            <select
+                              required
+                              value={formData.role}
+                              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            >
+                              <option value="trabajador">👷 Trabajador</option>
+                              <option value="admin">👨‍💼 Administrador</option>
+                              <option value="superadmin">🔐 Super Admin</option>
+                              <option value="monitor">📊 Monitor</option> {/* AGREGAR ESTA LÍNEA */}
+                            </select>
+                          </div>
+
+                          {/* Teléfono */}
+                          <div>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              Teléfono
+                            </label>
+                            <input
+                              type="tel"
+                              value={formData.phone}
+                              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                              placeholder="+56 9 XXXX XXXX"
+                              style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                              }}
+                            />
+                          </div>
+
+                          {/* Localidad (solo para Junta de Vecinos) - AGREGADO */}
+                          {formData.role === 'junta_vecinos' && (
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Localidad/Sector
+                              </label>
+                              <input
+                                type="text"
+                                value={formData.localidad || ''}
+                                onChange={(e) => setFormData({ ...formData, localidad: e.target.value })}
+                                placeholder="Ej: Sector Norte, Villa Los Aromos"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                          <button
+                            type="submit"
+                            disabled={loading || (formData.licenciaBloqueada && !formData.motivoBloqueo)}
+                            style={{
+                              padding: '12px 24px',
+                              background: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? '#9ca3af' : '#22c55e',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '16px',
+                              fontWeight: '500',
+                              cursor: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            {loading ? 'Actualizando...' : '✅ Guardar Cambios'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowEditUserForm(false);
+                              setEditingUser(null);
+                              setFormData({
+                                email: '',
+                                password: '',
+                                name: '',
+                                role: 'trabajador',
+                                phone: '',
+                                vehicleId: '',
+                                localidad: '',
+                                recoveryPin: '',
+                                rut: '',
+                                licenciaConducir: '',
+                                licenciasConducir: [],
+                                fechaVencimientoLicencia: '',
+                                observacionesLicencia: '',
+                                licenciaBloqueada: false,
+                                motivoBloqueo: '',
+                                fechaBloqueo: ''
+                              });
+                            }}
+                            style={{
+                              padding: '12px 24px',
+                              background: '#6b7280',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '16px',
+                              fontWeight: '500',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Lista de usuarios */}
+                  <div style={{
+                    background: 'white',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      padding: '20px',
+                      borderBottom: '1px solid #e5e7eb',
+                      background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)'
+                    }}>
+                      <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>
+                        📋 Lista de Usuarios
+                      </h2>
+                    </div>
+
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: '#f9fafb' }}>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Nombre
+                            </th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Email
+                            </th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Rol
+                            </th>
+                            {users.some(u => u.role === 'junta_vecinos') && (
+                              <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                                Localidad
+                              </th>
+                            )}
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Teléfono
+                            </th>
+                            <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Acciones
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {users.map((user) => {
+                            // Calcular estado de licencia DENTRO del map para cada usuario
+                            let estadoLicencia = null;
+                            if (user.fechaVencimientoLicencia && (user.licenciaConducir || (user.licenciasConducir && user.licenciasConducir.length > 0))) {
+                              const fechaVencimiento = new Date(user.fechaVencimientoLicencia);
                               const hoy = new Date();
                               const diasRestantes = Math.ceil((fechaVencimiento - hoy) / (1000 * 60 * 60 * 24));
 
-                              if (diasRestantes <= 14 && diasRestantes >= 0) {
-                                setMessage({
-                                  type: 'warning',
-                                  text: `⚠️ La licencia vence en ${diasRestantes} días`
-                                });
-                              } else if (diasRestantes < 0) {
-                                setMessage({
-                                  type: 'error',
-                                  text: '❌ La licencia está vencida'
-                                });
+                              if (diasRestantes < 0) {
+                                estadoLicencia = { tipo: 'vencida', texto: 'VENCIDA', color: '#ef4444' };
+                              } else if (diasRestantes <= 14) {
+                                estadoLicencia = { tipo: 'porVencer', texto: `${diasRestantes} días`, color: '#f59e0b' };
+                              } else {
+                                estadoLicencia = { tipo: 'vigente', texto: 'Vigente', color: '#22c55e' };
                               }
-                            }}
-                            min={new Date().toISOString().split('T')[0]}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
+                            }
+
+                            return (
+                              <tr key={user.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                <td style={{ padding: '16px 20px', fontSize: '14px', color: '#1f2937' }}>
+                                  {user.name}
+                                </td>
+                                <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
+                                  {user.email}
+                                </td>
+                                <td style={{ padding: '16px 20px' }}>
+                                  <span style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '12px',
+                                    fontWeight: '500',
+                                    background: user.role === 'superadmin' ? '#ede9fe' :
+                                      user.role === 'admin' ? '#dbeafe' :
+                                        user.role === 'monitor' ? '#f3f4f6' :  // AGREGAR ESTA LÍNEA
+                                          user.role === 'junta_vecinos' ? '#fef3c7' : '#dcfce7',
+                                    color: user.role === 'superadmin' ? '#6b21a8' :
+                                      user.role === 'admin' ? '#1e40af' :
+                                        user.role === 'monitor' ? '#374151' :  // AGREGAR ESTA LÍNEA
+                                          user.role === 'junta_vecinos' ? '#92400e' : '#15803d'
+                                  }}>
+                                    {user.role === 'superadmin' ? '🔐 Super Admin' :
+                                      user.role === 'admin' ? '👨‍💼 Admin' :
+                                        user.role === 'monitor' ? '📊 Monitor' :  // AGREGAR ESTA LÍNEA
+                                          user.role === 'junta_vecinos' ? '🏘️ Junta Vecinos' : '👷 Trabajador'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '16px 20px' }}>
+                                  {/* Columna de Licencia con todos los indicadores */}
+                                  {(user.licenciaConducir || (user.licenciasConducir && user.licenciasConducir.length > 0)) ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span style={{ fontSize: '12px', fontWeight: '500' }}>
+                                        {user.licenciasConducir ? user.licenciasConducir.join(', ') : `Clase ${user.licenciaConducir}`}
+                                      </span>
+
+                                      {/* Indicador de licencia bloqueada */}
+                                      {user.licenciaBloqueada && (
+                                        <span style={{
+                                          padding: '2px 6px',
+                                          borderRadius: '4px',
+                                          fontSize: '11px',
+                                          fontWeight: '600',
+                                          background: '#ef4444',
+                                          color: 'white'
+                                        }}>
+                                          🚫 BLOQUEADA
+                                        </span>
+                                      )}
+
+                                      {/* Indicador de lentes */}
+                                      {user.observacionesLicencia && user.observacionesLicencia.includes('lentes') && (
+                                        <span title={user.observacionesLicencia}>👓</span>
+                                      )}
+
+                                      {/* Estado de vencimiento */}
+                                      {estadoLicencia && !user.licenciaBloqueada && (
+                                        <span style={{
+                                          padding: '2px 6px',
+                                          borderRadius: '4px',
+                                          fontSize: '11px',
+                                          fontWeight: '600',
+                                          background: estadoLicencia.color + '20',
+                                          color: estadoLicencia.color,
+                                          border: `1px solid ${estadoLicencia.color}`
+                                        }}>
+                                          {estadoLicencia.tipo === 'vencida' && '⚠️'} {estadoLicencia.texto}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span style={{ color: '#9ca3af', fontSize: '12px' }}>Sin licencia</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
+                                  {user.phone || '-'}
+                                </td>
+                                <td style={{ padding: '16px 20px', textAlign: 'center' }}>
+                                  {user.id !== currentUser.uid ? (
+                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                      <button
+                                        onClick={() => handleEditUser(user)}
+                                        style={{
+                                          padding: '6px 12px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          fontSize: '12px',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        ✏️ Editar
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteUser(user.id)}
+                                        style={{
+                                          padding: '6px 12px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          fontSize: '12px',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                      <button
+                                        onClick={() => handleExportSingleUserPDF(user)}
+                                        style={{
+                                          padding: '6px 12px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          fontSize: '12px',
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        📕 Exportar
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span style={{
+                                      padding: '6px 12px',
+                                      background: '#e5e7eb',
+                                      color: '#6b7280',
+                                      borderRadius: '4px',
+                                      fontSize: '12px'
+                                    }}>
+                                      Usuario actual
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      {users.length === 0 && (
+                        <div style={{
+                          padding: '40px',
+                          textAlign: 'center',
+                          color: '#6b7280'
+                        }}>
+                          <div style={{ fontSize: '48px', marginBottom: '10px' }}>👥</div>
+                          <p style={{ fontSize: '16px' }}>No hay usuarios registrados</p>
+                          <p style={{ fontSize: '14px' }}>Haz clic en "Crear Nuevo Usuario" para comenzar</p>
                         </div>
                       )}
+                    </div>
+                  </div>
+                </>
+              )}
 
-                      {/* OBSERVACIONES DE LICENCIA - AGREGADO */}
-                      {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
-                        <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '8px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Observaciones/Restricciones de Licencia
-                            <span style={{
-                              marginLeft: '8px',
-                              fontSize: '12px',
-                              color: '#6b7280'
-                            }}>
-                              (Lentes, audífonos, restricciones médicas, etc.)
-                            </span>
-                          </label>
-                          <textarea
-                            value={formData.observacionesLicencia}
-                            onChange={(e) => setFormData({ ...formData, observacionesLicencia: e.target.value })}
-                            placeholder="Ej: Debe usar lentes, Restricción horaria nocturna, Solo vehículos automáticos, etc."
-                            rows={3}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
+              {/* CONTENIDO DE VEHÍCULOS */}
+              {activeTab === 'vehicles' && (
+                <>
+                  <h1 style={{
+                    margin: '0 0 30px 0',
+                    color: '#1e293b',
+                    fontSize: '28px',
+                    fontWeight: '600'
+                  }}>
+                    🚛 Gestión de Vehículos y Maquinaria
+                  </h1>
+
+                  {/* Estadísticas de vehículos */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '150px' : '200px'}, 1fr))`,
+                    gap: '15px',
+                    marginBottom: '30px'
+                  }}>
+                    <div style={{
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #3b82f6'
+                    }}>
+                      <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getVehicleStats().total}
+                      </div>
+                      <div style={{ color: '#6b7280', fontSize: '13px' }}>📊 Total</div>
+                    </div>
+
+                    <div style={{
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #22c55e'
+                    }}>
+                      <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getVehicleStats().disponibles}
+                      </div>
+                      <div style={{ color: '#6b7280', fontSize: '13px' }}>✅ Disponibles</div>
+                    </div>
+
+                    <div style={{
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #f59e0b'
+                    }}>
+                      <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getVehicleStats().enUso}
+                      </div>
+                      <div style={{ color: '#6b7280', fontSize: '13px' }}>🔧 En Uso</div>
+                    </div>
+
+                    <div style={{
+                      background: 'white',
+                      padding: '20px',
+                      borderRadius: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                      borderLeft: '4px solid #ef4444'
+                    }}>
+                      <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
+                        {getVehicleStats().mantenimiento}
+                      </div>
+                      <div style={{ color: '#6b7280', fontSize: '13px' }}>🔧 Mantenimiento</div>
+                    </div>
+                  </div>
+
+                  {/* Botones de acción */}
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+                    <button
+                      onClick={() => {
+                        setShowVehicleForm(!showVehicleForm);
+                        if (showVehicleForm) {
+                          setEditingVehicle(null);
+                          setVehicleFormData({
+                            nombre: '',
+                            tipo: '',
+                            marca: '',
+                            modelo: '',
+                            año: new Date().getFullYear(),
+                            patente: '',
+                            color: '',
+                            numeroChasis: '',
+                            numeroMotor: '',
+                            kilometraje: 0,
+                            capacidadCombustible: 0,
+                            tipoCombustible: 'gasolina',
+                            ultimoMantenimiento: '',
+                            proximoMantenimiento: '',
+                            kilometrajeUltimoMantenimiento: 0,
+                            kilometrajeProximoMantenimiento: 0,
+                            fechaRevisionTecnica: '',
+                            fechaSeguro: '',
+                            fechaPermisoCirculacion: '',
+                            operadorAsignado: '',
+                            estado: 'disponible',
+                            lat: null,
+                            lng: null,
+                            observaciones: ''
+                          });
+                        }
+                      }}
+                      style={{
+                        padding: '12px 24px',
+                        background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '16px',
+                        fontWeight: '500',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {showVehicleForm ? '✖ Cancelar' : '➕ Registrar Nuevo Vehículo'}
+                    </button>
+
+                    <button
+                      onClick={() => setShowTipoModal(true)}
+                      style={{
+                        padding: '12px 24px',
+                        background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '16px',
+                        fontWeight: '500',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ⚙️ Gestionar Tipos de Vehículos
+                    </button>
+                    <button
+                      onClick={handleExportVehiclesPDF}
+                      style={{
+                        padding: '12px 24px',
+                        background: 'linear-gradient(135deg, #dd8b2cff 0%, #ee1f10ff 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '16px',
+                        fontWeight: '500',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      📕 Exportar a PDF
+                    </button>
+                  </div>
+
+                  {/* Formulario de vehículo */}
+                  {/* Formulario de vehículo AMPLIADO */}
+                  {showVehicleForm && (
+                    <div style={{
+                      background: 'white',
+                      padding: '30px',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                      marginBottom: '30px'
+                    }}>
+                      <h2 style={{ margin: '0 0 20px 0', color: '#1f2937', fontSize: '20px' }}>
+                        {editingVehicle ? '✏️ Editar Vehículo' : '🚛 Registrar Nuevo Vehículo'}
+                      </h2>
+
+                      <form onSubmit={handleCreateOrUpdateVehicle}>
+                        {/* SECCIÓN 1: DATOS GENERALES */}
+                        <div style={{
+                          marginBottom: '25px',
+                          paddingBottom: '20px',
+                          borderBottom: '1px solid #e5e7eb'
+                        }}>
+                          <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
+                            📋 Datos Generales
+                          </h3>
                           <div style={{
-                            marginTop: '10px',
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: '10px'
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                            gap: '15px'
                           }}>
-                            <span style={{ fontSize: '12px', color: '#6b7280' }}>Agregar rápido:</span>
-                            {['Usa lentes 👓', 'Usa audífonos 🦻', 'Solo automático 🚗', 'Sin nocturno 🌙'].map(restriccion => (
-                              <button
-                                key={restriccion}
-                                type="button"
-                                onClick={() => {
-                                  const currentObs = formData.observacionesLicencia || '';
-                                  const newObs = currentObs ? `${currentObs}, ${restriccion}` : restriccion;
-                                  setFormData({ ...formData, observacionesLicencia: newObs });
-                                }}
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Nombre/Identificación *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={vehicleFormData.nombre}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, nombre: e.target.value })}
+                                placeholder="Ej: Camión 01, Retroexcavadora 02"
                                 style={{
-                                  padding: '4px 8px',
-                                  background: '#f3f4f6',
+                                  width: '100%',
+                                  padding: '10px',
                                   border: '1px solid #d1d5db',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  cursor: 'pointer'
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Tipo de Vehículo *
+                              </label>
+                              <select
+                                required
+                                value={vehicleFormData.tipo}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, tipo: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
                                 }}
                               >
-                                {restriccion}
-                              </button>
-                            ))}
+                                <option value="">-- Seleccionar tipo --</option>
+                                {tiposVehiculo.map(tipo => (
+                                  <option key={tipo.id} value={tipo.id}>
+                                    {tipo.icon} {tipo.nombre}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Marca *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={vehicleFormData.marca}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, marca: e.target.value })}
+                                placeholder="Ej: Toyota, Caterpillar"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Modelo *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={vehicleFormData.modelo}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, modelo: e.target.value })}
+                                placeholder="Ej: Hilux, 320D"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Año
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.año}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, año: parseInt(e.target.value) })}
+                                min="1990"
+                                max={new Date().getFullYear() + 1}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Patente *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={vehicleFormData.patente}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, patente: e.target.value })}
+                                placeholder="Ej: XX-XX-99"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                N° VIN/Chasis
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.vin}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, vin: e.target.value })}
+                                placeholder="Número de chasis"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                N° Motor
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.numeroMotor}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, numeroMotor: e.target.value })}
+                                placeholder="Número de motor"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Color
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.color}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, color: e.target.value })}
+                                placeholder="Ej: Blanco"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Modalidad de Adquisición
+                              </label>
+                              <select
+                                value={vehicleFormData.modalidadAdquisicion}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, modalidadAdquisicion: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="compra">Compra</option>
+                                <option value="leasing">Leasing</option>
+                                <option value="arriendo">Arriendo</option>
+                                <option value="donacion">Donación</option>
+                                <option value="comodato">Comodato</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Proveedor
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.proveedor}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, proveedor: e.target.value })}
+                                placeholder="Nombre del proveedor"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Valor de Adquisición (CLP)
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.valorAdquisicion}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, valorAdquisicion: parseInt(e.target.value) })}
+                                placeholder="0"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
                           </div>
                         </div>
-                      )}
+                        {/* SECCIÓN DE LICENCIAS REQUERIDAS - NUEVO */}
+                        <div style={{
+                          marginBottom: '25px',
+                          paddingBottom: '20px',
+                          borderBottom: '1px solid #e5e7eb'
+                        }}>
+                          <h3 style={{
+                            margin: '0 0 15px 0',
+                            color: '#374151',
+                            fontSize: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>
+                            🚗 Licencias Requeridas para Operar
+                            <span style={{
+                              fontSize: '12px',
+                              color: '#6b7280',
+                              fontWeight: '400'
+                            }}>
+                              (El operador debe tener al menos una de estas licencias)
+                            </span>
+                          </h3>
 
-                      {/* ESTADO DE BLOQUEO - AGREGADO */}
-                      {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
-                        <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
                           <div style={{
                             padding: '15px',
-                            background: formData.licenciaBloqueada ? '#fee2e2' : '#f9fafb',
+                            background: '#f9fafb',
                             borderRadius: '8px',
-                            border: formData.licenciaBloqueada ? '2px solid #ef4444' : '1px solid #e5e7eb'
+                            border: '1px solid #e5e7eb'
                           }}>
                             <div style={{
                               display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: formData.licenciaBloqueada ? '10px' : '0'
+                              flexWrap: 'wrap',
+                              gap: '10px',
+                              marginBottom: '10px'
                             }}>
-                              <label style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                fontSize: '14px',
-                                fontWeight: '500',
-                                color: formData.licenciaBloqueada ? '#991b1b' : '#374151'
-                              }}>
-                                <input
-                                  type="checkbox"
-                                  checked={formData.licenciaBloqueada}
-                                  onChange={(e) => {
-                                    setFormData({
-                                      ...formData,
-                                      licenciaBloqueada: e.target.checked,
-                                      fechaBloqueo: e.target.checked ? new Date().toISOString() : ''
-                                    });
-                                  }}
-                                  style={{
-                                    width: '20px',
-                                    height: '20px',
-                                    cursor: 'pointer'
-                                  }}
-                                />
-                                {formData.licenciaBloqueada ? '🚫 LICENCIA BLOQUEADA' : '✅ Licencia Habilitada'}
-                              </label>
-                              {formData.licenciaBloqueada && (
-                                <span style={{
-                                  fontSize: '12px',
-                                  color: '#991b1b',
-                                  fontWeight: '600'
+                              {['B', 'C', 'A1', 'A2', 'A3', 'A4', 'A5', 'D', 'E', 'F'].map(licencia => (
+                                <label key={licencia} style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  padding: '8px 15px',
+                                  background: vehicleFormData.licenciasRequeridas?.includes(licencia) ? '#3b82f6' : 'white',
+                                  color: vehicleFormData.licenciasRequeridas?.includes(licencia) ? 'white' : '#374151',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  border: '2px solid',
+                                  borderColor: vehicleFormData.licenciasRequeridas?.includes(licencia) ? '#3b82f6' : '#d1d5db',
+                                  transition: 'all 0.2s',
+                                  fontWeight: '500'
                                 }}>
-                                  ⚠️ NO PUEDE CONDUCIR
-                                </span>
-                              )}
+                                  <input
+                                    type="checkbox"
+                                    value={licencia}
+                                    checked={vehicleFormData.licenciasRequeridas?.includes(licencia) || false}
+                                    onChange={(e) => {
+                                      const newLicencias = e.target.checked
+                                        ? [...(vehicleFormData.licenciasRequeridas || []), licencia]
+                                        : vehicleFormData.licenciasRequeridas.filter(l => l !== licencia);
+                                      setVehicleFormData({ ...vehicleFormData, licenciasRequeridas: newLicencias });
+                                    }}
+                                    style={{ display: 'none' }}
+                                  />
+                                  <span>Clase {licencia}</span>
+                                </label>
+                              ))}
                             </div>
 
-                            {formData.licenciaBloqueada && (
-                              <div>
-                                <label style={{
-                                  display: 'block',
-                                  marginBottom: '6px',
-                                  fontSize: '13px',
-                                  fontWeight: '500',
-                                  color: '#991b1b'
-                                }}>
-                                  Motivo del bloqueo *
-                                </label>
-                                <select
-                                  value={formData.motivoBloqueo}
-                                  onChange={(e) => setFormData({ ...formData, motivoBloqueo: e.target.value })}
-                                  required={formData.licenciaBloqueada}
-                                  style={{
-                                    width: '100%',
-                                    padding: '8px',
-                                    border: '1px solid #ef4444',
-                                    borderRadius: '4px',
-                                    fontSize: '13px',
-                                    marginBottom: '10px'
-                                  }}
-                                >
-                                  <option value="">-- Seleccionar motivo --</option>
-                                  <option value="parte_pendiente">Parte/Multa pendiente</option>
-                                  <option value="suspension_judicial">Suspensión judicial</option>
-                                  <option value="vencida">Licencia vencida</option>
-                                  <option value="examen_medico">Pendiente examen médico</option>
-                                  <option value="incapacidad_temporal">Incapacidad temporal</option>
-                                  <option value="investigacion">Bajo investigación</option>
-                                  <option value="otro">Otro motivo</option>
-                                </select>
+                            <div style={{
+                              padding: '10px',
+                              background: '#fef3c7',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              color: '#92400e'
+                            }}>
+                              <strong>⚠️ Importante:</strong> Solo los trabajadores con al menos una de las licencias seleccionadas podrán ser asignados a este vehículo.
+                            </div>
 
-                                {formData.motivoBloqueo === 'otro' && (
-                                  <textarea
-                                    placeholder="Especifique el motivo del bloqueo..."
-                                    required
-                                    rows={2}
-                                    style={{
-                                      width: '100%',
-                                      padding: '8px',
-                                      border: '1px solid #ef4444',
-                                      borderRadius: '4px',
-                                      fontSize: '13px'
-                                    }}
-                                  />
-                                )}
-
-                                <div style={{
-                                  marginTop: '10px',
-                                  padding: '10px',
-                                  background: '#fef2f2',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  color: '#7f1d1d'
-                                }}>
-                                  <strong>⚠️ Importante:</strong> Al bloquear la licencia, el usuario no podrá ser asignado a ningún vehículo hasta que se desbloquee.
-                                </div>
+                            {/* Referencia de tipos de licencia */}
+                            <div style={{
+                              marginTop: '10px',
+                              padding: '10px',
+                              background: 'white',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              color: '#6b7280'
+                            }}>
+                              <div style={{ fontWeight: '600', marginBottom: '5px' }}>📖 Referencia de Clases:</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '5px' }}>
+                                <div>• <strong>B:</strong> Vehículos particulares</div>
+                                <div>• <strong>C:</strong> Motocicletas</div>
+                                <div>• <strong>A1:</strong> Taxis</div>
+                                <div>• <strong>A2:</strong> Buses pequeños</div>
+                                <div>• <strong>A3:</strong> Taxis y ambulancias</div>
+                                <div>• <strong>A4:</strong> Transporte de carga</div>
+                                <div>• <strong>A5:</strong> Todo tipo de vehículos</div>
+                                <div>• <strong>D:</strong> Maquinaria automotriz</div>
+                                <div>• <strong>E:</strong> Tracción animal</div>
+                                <div>• <strong>F:</strong> Vehículos adaptados</div>
                               </div>
-                            )}
+                            </div>
                           </div>
                         </div>
-                      )}
 
-                      {/* Rol */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
+                        {/* SECCIÓN 2: ESPECIFICACIONES TÉCNICAS */}
+                        <div style={{
+                          marginBottom: '25px',
+                          paddingBottom: '20px',
+                          borderBottom: '1px solid #e5e7eb'
                         }}>
-                          Rol *
-                        </label>
-                        <select
-                          required
-                          value={formData.role}
-                          onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        >
-                          <option value="trabajador">👷 Trabajador</option>
-                          <option value="admin">👨‍💼 Administrador</option>
-                          <option value="superadmin">🔐 Super Admin</option>
-                          <option value="junta_vecinos">🏘️ Junta de Vecinos</option>
-                        </select>
-                      </div>
+                          <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
+                            ⚙️ Especificaciones Técnicas
+                          </h3>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                            gap: '15px'
+                          }}>
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Tipo de Combustible
+                              </label>
+                              <select
+                                value={vehicleFormData.tipoCombustible}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, tipoCombustible: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="gasolina">Gasolina</option>
+                                <option value="diesel">Diesel</option>
+                                <option value="electrico">Eléctrico</option>
+                                <option value="hibrido">Híbrido</option>
+                                <option value="gas">Gas</option>
+                              </select>
+                            </div>
 
-                      {/* Teléfono */}
-                      <div>
-                        <label style={{
-                          display: 'block',
-                          marginBottom: '8px',
-                          color: '#374151',
-                          fontSize: '14px',
-                          fontWeight: '500'
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Cilindrada (cc)
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.cilindrada}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, cilindrada: e.target.value })}
+                                placeholder="Ej: 2400"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Potencia (HP)
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.potencia}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, potencia: e.target.value })}
+                                placeholder="Ej: 150"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Transmisión
+                              </label>
+                              <select
+                                value={vehicleFormData.transmision}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, transmision: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="manual">Manual</option>
+                                <option value="automatica">Automática</option>
+                                <option value="secuencial">Secuencial</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Tracción
+                              </label>
+                              <select
+                                value={vehicleFormData.traccion}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, traccion: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="4x2">4x2</option>
+                                <option value="4x4">4x4</option>
+                                <option value="6x4">6x4</option>
+                                <option value="6x6">6x6</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Capacidad de Pasajeros
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.capacidadPasajeros}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, capacidadPasajeros: parseInt(e.target.value) })}
+                                placeholder="0"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Capacidad de Carga (kg)
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.capacidadCarga}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, capacidadCarga: parseInt(e.target.value) })}
+                                placeholder="0"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Equipamiento Adicional
+                              </label>
+                              <textarea
+                                value={vehicleFormData.equipamientoAdicional}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, equipamientoAdicional: e.target.value })}
+                                placeholder="Ej: Barra de luces, winche, etc."
+                                rows={2}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        {/* SECCIÓN 3: DOCUMENTACIÓN LEGAL */}
+                        <div style={{
+                          marginBottom: '25px',
+                          paddingBottom: '20px',
+                          borderBottom: '1px solid #e5e7eb'
                         }}>
-                          Teléfono
-                        </label>
-                        <input
-                          type="tel"
-                          value={formData.phone}
-                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                          placeholder="+56 9 XXXX XXXX"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
+                          <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
+                            📄 Documentación Legal (Chile)
+                          </h3>
 
-                      {/* Localidad (solo para Junta de Vecinos) - AGREGADO */}
-                      {formData.role === 'junta_vecinos' && (
-                        <div>
+                          {/* PARTE 1: CAMPOS DE INFORMACIÓN */}
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                            gap: '15px',
+                            marginBottom: '20px'
+                          }}>
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                N° Permiso Circulación
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.numeroPermisoCirculacion}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, numeroPermisoCirculacion: e.target.value })}
+                                placeholder="Número de permiso"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Vigencia Permiso Circulación
+                              </label>
+                              <input
+                                type="date"
+                                value={vehicleFormData.vigenciaPermisoCirculacion}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, vigenciaPermisoCirculacion: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Fecha Revisión Técnica
+                              </label>
+                              <input
+                                type="date"
+                                value={vehicleFormData.fechaRevisionTecnica}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, fechaRevisionTecnica: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Vigencia SOAP
+                              </label>
+                              <input
+                                type="date"
+                                value={vehicleFormData.vigenciaSOAP}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, vigenciaSOAP: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                ¿Tiene Seguro Complementario?
+                              </label>
+                              <select
+                                value={vehicleFormData.seguroComplementario}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, seguroComplementario: e.target.value === 'true' })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="false">No</option>
+                                <option value="true">Sí</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Multas Registradas
+                              </label>
+                              <textarea
+                                value={vehicleFormData.multasRegistradas}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, multasRegistradas: e.target.value })}
+                                placeholder="Detalle de multas si existen"
+                                rows={2}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* PARTE 2: CARGA DE DOCUMENTOS DIGITALIZADOS */}
+                          <div style={{
+                            marginTop: '25px',
+                            padding: '20px',
+                            background: '#f9fafb',
+                            borderRadius: '8px'
+                          }}>
+                            <h4 style={{
+                              margin: '0 0 15px 0',
+                              fontSize: '15px',
+                              fontWeight: '600',
+                              color: '#1f2937',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}>
+                              📁 Documentos Digitalizados
+                              <span style={{
+                                fontSize: '12px',
+                                color: '#6b7280',
+                                fontWeight: '400'
+                              }}>
+                                ("(Solo imágenes JPG o PNG - Máx. 10MB)" JPG o PNG - Máx. 10MB)
+                              </span>
+                            </h4>
+                            {/* Aviso importante sobre PDFs */}
+                            <div style={{
+                              padding: '15px',
+                              background: '#fef3c7',
+                              border: '2px solid #f59e0b',
+                              borderRadius: '8px',
+                              marginBottom: '20px'
+                            }}>
+                              <h4 style={{ margin: '0 0 10px 0', color: '#92400e', fontSize: '16px' }}>
+                                📸 IMPORTANTE: Solo se aceptan IMÁGENES
+                              </h4>
+                              <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#78350f' }}>
+                                Los archivos PDF no están soportados. Si tienes documentos en PDF:
+                              </p>
+                              <ol style={{ margin: '0', paddingLeft: '20px', fontSize: '14px', color: '#78350f' }}>
+                                <li>📱 Toma una <strong>FOTO</strong> del documento con tu celular</li>
+                                <li>💻 Haz una <strong>CAPTURA DE PANTALLA</strong> del PDF</li>
+                                <li>🔄 Convierte el PDF a JPG en: <a href="https://www.ilovepdf.com/pdf_to_jpg" target="_blank" rel="noopener noreferrer" style={{ color: '#f59e0b' }}>iLovePDF.com</a></li>
+                              </ol>
+                            </div>
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '280px'}, 1fr))`,
+                              gap: '15px'
+                            }}>
+                              {/* Permiso de Circulación */}
+                              <div style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '15px',
+                                background: vehicleFormData.documentos?.permisoCirculacion?.url ? '#f0fdf4' : 'white'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '10px'
+                                }}>
+                                  <h5 style={{
+                                    margin: 0,
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                  }}>
+                                    📋 Permiso Circulación
+                                  </h5>
+                                  {vehicleFormData.documentos?.permisoCirculacion?.url && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      background: '#22c55e',
+                                      color: 'white',
+                                      borderRadius: '4px'
+                                    }}>
+                                      ✓ Cargado
+                                    </span>
+                                  )}
+                                </div>
+
+                                {vehicleFormData.documentos?.permisoCirculacion?.url ? (
+                                  <div>
+                                    <div style={{
+                                      padding: '8px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      fontSize: '12px'
+                                    }}>
+                                      <div style={{
+                                        fontWeight: '500',
+                                        color: '#1f2937',
+                                        marginBottom: '3px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {vehicleFormData.documentos.permisoCirculacion.nombre}
+                                      </div>
+                                      <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                                        {new Date(vehicleFormData.documentos.permisoCirculacion.fecha).toLocaleDateString('es-CL')}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+
+                                      <a href={vehicleFormData.documentos.permisoCirculacion.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          textAlign: 'center',
+                                          borderRadius: '6px',
+                                          textDecoration: 'none',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        👁️ Ver
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDocument('permisoCirculacion')}
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '6px',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <input
+                                      type="file"
+                                      id="permisoCirculacion"
+                                      accept=".jpg,.jpeg,.png"
+                                      onChange={(e) => handleFileUpload(e.target.files[0], 'permisoCirculacion', editingVehicle?.id)}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <label
+                                      htmlFor="permisoCirculacion"
+                                      style={{
+                                        display: 'block',
+                                        padding: '20px 10px',
+                                        background: '#f9fafb',
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: '6px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        color: '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.background = '#eff6ff';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#d1d5db';
+                                        e.currentTarget.style.background = '#f9fafb';
+                                      }}
+                                    >
+                                      {uploadProgress.permisoCirculacion ? (
+                                        <div>
+                                          <div style={{ marginBottom: '5px' }}>
+                                            Subiendo... {uploadProgress.permisoCirculacion}%
+                                          </div>
+                                          <div style={{
+                                            width: '100%',
+                                            height: '4px',
+                                            background: '#e5e7eb',
+                                            borderRadius: '2px',
+                                            overflow: 'hidden'
+                                          }}>
+                                            <div style={{
+                                              width: `${uploadProgress.permisoCirculacion}%`,
+                                              height: '100%',
+                                              background: '#3b82f6',
+                                              transition: 'width 0.3s'
+                                            }} />
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                          <div>Click para subir</div>
+                                        </>
+                                      )}
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Revisión Técnica */}
+                              <div style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '15px',
+                                background: vehicleFormData.documentos?.revisionTecnica?.url ? '#f0fdf4' : 'white'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '10px'
+                                }}>
+                                  <h5 style={{
+                                    margin: 0,
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                  }}>
+                                    🔧 Revisión Técnica
+                                  </h5>
+                                  {vehicleFormData.documentos?.revisionTecnica?.url && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      background: '#22c55e',
+                                      color: 'white',
+                                      borderRadius: '4px'
+                                    }}>
+                                      ✓ Cargado
+                                    </span>
+                                  )}
+                                </div>
+
+                                {vehicleFormData.documentos?.revisionTecnica?.url ? (
+                                  <div>
+                                    <div style={{
+                                      padding: '8px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      fontSize: '12px'
+                                    }}>
+                                      <div style={{
+                                        fontWeight: '500',
+                                        color: '#1f2937',
+                                        marginBottom: '3px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {vehicleFormData.documentos.revisionTecnica.nombre}
+                                      </div>
+                                      <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                                        {new Date(vehicleFormData.documentos.revisionTecnica.fecha).toLocaleDateString('es-CL')}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+
+                                      <a href={vehicleFormData.documentos.revisionTecnica.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          textAlign: 'center',
+                                          borderRadius: '6px',
+                                          textDecoration: 'none',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        👁️ Ver
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDocument('revisionTecnica')}
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '6px',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <input
+                                      type="file"
+                                      id="revisionTecnica"
+                                      accept=".jpg,.jpeg,.png"
+                                      onChange={(e) => handleFileUpload(e.target.files[0], 'revisionTecnica', editingVehicle?.id)}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <label
+                                      htmlFor="revisionTecnica"
+                                      style={{
+                                        display: 'block',
+                                        padding: '20px 10px',
+                                        background: '#f9fafb',
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: '6px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        color: '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.background = '#eff6ff';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#d1d5db';
+                                        e.currentTarget.style.background = '#f9fafb';
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                      <div>Click para subir</div>
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Certificado de Gases */}
+                              <div style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '15px',
+                                background: vehicleFormData.documentos?.certificadoGases?.url ? '#f0fdf4' : 'white'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '10px'
+                                }}>
+                                  <h5 style={{
+                                    margin: 0,
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                  }}>
+                                    💨 Certificado de Gases
+                                  </h5>
+                                  {vehicleFormData.documentos?.certificadoGases?.url && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      background: '#22c55e',
+                                      color: 'white',
+                                      borderRadius: '4px'
+                                    }}>
+                                      ✓ Cargado
+                                    </span>
+                                  )}
+                                </div>
+
+                                {vehicleFormData.documentos?.certificadoGases?.url ? (
+                                  <div>
+                                    <div style={{
+                                      padding: '8px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      fontSize: '12px'
+                                    }}>
+                                      <div style={{
+                                        fontWeight: '500',
+                                        color: '#1f2937',
+                                        marginBottom: '3px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {vehicleFormData.documentos.certificadoGases.nombre}
+                                      </div>
+                                      <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                                        {new Date(vehicleFormData.documentos.certificadoGases.fecha).toLocaleDateString('es-CL')}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+
+                                      <a href={vehicleFormData.documentos.certificadoGases.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          textAlign: 'center',
+                                          borderRadius: '6px',
+                                          textDecoration: 'none',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        👁️ Ver
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDocument('certificadoGases')}
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '6px',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <input
+                                      type="file"
+                                      id="certificadoGases"
+                                      accept=".jpg,.jpeg,.png"
+                                      onChange={(e) => handleFileUpload(e.target.files[0], 'certificadoGases', editingVehicle?.id)}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <label
+                                      htmlFor="certificadoGases"
+                                      style={{
+                                        display: 'block',
+                                        padding: '20px 10px',
+                                        background: '#f9fafb',
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: '6px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        color: '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.background = '#eff6ff';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#d1d5db';
+                                        e.currentTarget.style.background = '#f9fafb';
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                      <div>Click para subir</div>
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* SOAP */}
+                              <div style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '15px',
+                                background: vehicleFormData.documentos?.soap?.url ? '#f0fdf4' : 'white'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '10px'
+                                }}>
+                                  <h5 style={{
+                                    margin: 0,
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                  }}>
+                                    🛡️ SOAP
+                                  </h5>
+                                  {vehicleFormData.documentos?.soap?.url && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      background: '#22c55e',
+                                      color: 'white',
+                                      borderRadius: '4px'
+                                    }}>
+                                      ✓ Cargado
+                                    </span>
+                                  )}
+                                </div>
+
+                                {vehicleFormData.documentos?.soap?.url ? (
+                                  <div>
+                                    <div style={{
+                                      padding: '8px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      fontSize: '12px'
+                                    }}>
+                                      <div style={{
+                                        fontWeight: '500',
+                                        color: '#1f2937',
+                                        marginBottom: '3px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {vehicleFormData.documentos.soap.nombre}
+                                      </div>
+                                      <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                                        {new Date(vehicleFormData.documentos.soap.fecha).toLocaleDateString('es-CL')}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+
+                                      <a href={vehicleFormData.documentos.soap.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          textAlign: 'center',
+                                          borderRadius: '6px',
+                                          textDecoration: 'none',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        👁️ Ver
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDocument('soap')}
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '6px',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <input
+                                      type="file"
+                                      id="soap"
+                                      accept=".jpg,.jpeg,.png"
+                                      onChange={(e) => handleFileUpload(e.target.files[0], 'soap', editingVehicle?.id)}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <label
+                                      htmlFor="soap"
+                                      style={{
+                                        display: 'block',
+                                        padding: '20px 10px',
+                                        background: '#f9fafb',
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: '6px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        color: '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.background = '#eff6ff';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#d1d5db';
+                                        e.currentTarget.style.background = '#f9fafb';
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                      <div>Click para subir</div>
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Seguro Complementario */}
+                              <div style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '15px',
+                                background: vehicleFormData.documentos?.seguroComplementario?.url ? '#f0fdf4' : 'white'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '10px'
+                                }}>
+                                  <h5 style={{
+                                    margin: 0,
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                  }}>
+                                    📑 Seguro Complementario
+                                  </h5>
+                                  {vehicleFormData.documentos?.seguroComplementario?.url && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      background: '#22c55e',
+                                      color: 'white',
+                                      borderRadius: '4px'
+                                    }}>
+                                      ✓ Cargado
+                                    </span>
+                                  )}
+                                </div>
+
+                                {vehicleFormData.documentos?.seguroComplementario?.url ? (
+                                  <div>
+                                    <div style={{
+                                      padding: '8px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      fontSize: '12px'
+                                    }}>
+                                      <div style={{
+                                        fontWeight: '500',
+                                        color: '#1f2937',
+                                        marginBottom: '3px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {vehicleFormData.documentos.seguroComplementario.nombre}
+                                      </div>
+                                      <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                                        {new Date(vehicleFormData.documentos.seguroComplementario.fecha).toLocaleDateString('es-CL')}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+
+                                      <a href={vehicleFormData.documentos.seguroComplementario.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          textAlign: 'center',
+                                          borderRadius: '6px',
+                                          textDecoration: 'none',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        👁️ Ver
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDocument('seguroComplementario')}
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '6px',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <input
+                                      type="file"
+                                      id="seguroComplementario"
+                                      accept=".jpg,.jpeg,.png"
+                                      onChange={(e) => handleFileUpload(e.target.files[0], 'seguroComplementario', editingVehicle?.id)}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <label
+                                      htmlFor="seguroComplementario"
+                                      style={{
+                                        display: 'block',
+                                        padding: '20px 10px',
+                                        background: '#f9fafb',
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: '6px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        color: '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.background = '#eff6ff';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#d1d5db';
+                                        e.currentTarget.style.background = '#f9fafb';
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                      <div>Click para subir</div>
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Padrón Municipal */}
+                              <div style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '15px',
+                                background: vehicleFormData.documentos?.padronMunicipal?.url ? '#f0fdf4' : 'white'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '10px'
+                                }}>
+                                  <h5 style={{
+                                    margin: 0,
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                  }}>
+                                    🏛️ Padrón Municipal
+                                  </h5>
+                                  {vehicleFormData.documentos?.padronMunicipal?.url && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      background: '#22c55e',
+                                      color: 'white',
+                                      borderRadius: '4px'
+                                    }}>
+                                      ✓ Cargado
+                                    </span>
+                                  )}
+                                </div>
+
+                                {vehicleFormData.documentos?.padronMunicipal?.url ? (
+                                  <div>
+                                    <div style={{
+                                      padding: '8px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      fontSize: '12px'
+                                    }}>
+                                      <div style={{
+                                        fontWeight: '500',
+                                        color: '#1f2937',
+                                        marginBottom: '3px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {vehicleFormData.documentos.padronMunicipal.nombre}
+                                      </div>
+                                      <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                                        {new Date(vehicleFormData.documentos.padronMunicipal.fecha).toLocaleDateString('es-CL')}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+
+                                      <a href={vehicleFormData.documentos.padronMunicipal.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          textAlign: 'center',
+                                          borderRadius: '6px',
+                                          textDecoration: 'none',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        👁️ Ver
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDocument('padronMunicipal')}
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '6px',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <input
+                                      type="file"
+                                      id="padronMunicipal"
+                                      accept=".jpg,.jpeg,.png"
+                                      onChange={(e) => handleFileUpload(e.target.files[0], 'padronMunicipal', editingVehicle?.id)}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <label
+                                      htmlFor="padronMunicipal"
+                                      style={{
+                                        display: 'block',
+                                        padding: '20px 10px',
+                                        background: '#f9fafb',
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: '6px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        color: '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.background = '#eff6ff';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#d1d5db';
+                                        e.currentTarget.style.background = '#f9fafb';
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                      <div>Click para subir</div>
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Sección de documentos adicionales */}
+                            <div style={{
+                              marginTop: '20px',
+                              padding: '15px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #e5e7eb'
+                            }}>
+                              <h5 style={{
+                                margin: '0 0 12px 0',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                color: '#374151'
+                              }}>
+                                📂 Otros Documentos
+                              </h5>
+
+                              {/* Lista de documentos adicionales */}
+                              {vehicleFormData.documentos?.otros?.length > 0 && (
+                                <div style={{ marginBottom: '12px' }}>
+                                  {vehicleFormData.documentos.otros.map((doc, index) => (
+                                    <div key={index} style={{
+                                      padding: '10px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center'
+                                    }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{
+                                          fontWeight: '500',
+                                          fontSize: '13px',
+                                          color: '#1f2937',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap'
+                                        }}>
+                                          📄 {doc.nombre}
+                                        </div>
+                                        <div style={{
+                                          color: '#6b7280',
+                                          fontSize: '11px',
+                                          marginTop: '2px'
+                                        }}>
+                                          {formatFileSize(doc.tamaño)} • {new Date(doc.fecha).toLocaleDateString('es-CL')}
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'flex', gap: '6px', marginLeft: '10px' }}>
+
+                                        <a href={doc.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          style={{
+                                            padding: '4px 8px',
+                                            background: '#3b82f6',
+                                            color: 'white',
+                                            borderRadius: '4px',
+                                            textDecoration: 'none',
+                                            fontSize: '11px'
+                                          }}
+                                        >
+                                          Ver
+                                        </a>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteDocument('otros', index)}
+                                          style={{
+                                            padding: '4px 8px',
+                                            background: '#ef4444',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '11px'
+                                          }}
+                                        >
+                                          Eliminar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Botón para agregar más documentos */}
+                              <div>
+                                <input
+                                  type="file"
+                                  id="otrosDocumentos"
+                                  accept=".jpg,.jpeg,.png"
+                                  onChange={(e) => handleFileUpload(e.target.files[0], 'otros', editingVehicle?.id)}
+                                  style={{ display: 'none' }}
+                                  disabled={uploadingFile}
+                                />
+                                <label
+                                  htmlFor="otrosDocumentos"
+                                  style={{
+                                    display: 'inline-block',
+                                    padding: '8px 16px',
+                                    background: uploadingFile ? '#9ca3af' : '#10b981',
+                                    color: 'white',
+                                    borderRadius: '6px',
+                                    cursor: uploadingFile ? 'not-allowed' : 'pointer',
+                                    fontSize: '13px',
+                                    fontWeight: '500'
+                                  }}
+                                >
+                                  {uploadingFile ? '⏳ Subiendo...' : '➕ Agregar Documento'}
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        {/* SECCIÓN 4: CONTROL DE OPERACIÓN */}
+                        <div style={{
+                          marginBottom: '25px',
+                          paddingBottom: '20px',
+                          borderBottom: '1px solid #e5e7eb'
+                        }}>
+                          <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
+                            📊 Control de Operación
+                          </h3>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                            gap: '15px'
+                          }}>
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Kilometraje Actual
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.kilometraje}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, kilometraje: parseInt(e.target.value) })}
+                                placeholder="0"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Horas de Uso (Maquinaria)
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.horasUso}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, horasUso: parseInt(e.target.value) })}
+                                placeholder="0"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Consumo Promedio (L/100km)
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.consumoPromedio}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, consumoPromedio: parseFloat(e.target.value) })}
+                                placeholder="0"
+                                step="0.1"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                ¿Tiene GPS/Telemetría?
+                              </label>
+                              <select
+                                value={vehicleFormData.tieneGPS}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, tieneGPS: e.target.value === 'true' })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="false">No</option>
+                                <option value="true">Sí</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* SECCIÓN 5: MANTENIMIENTO */}
+                        <div style={{
+                          marginBottom: '25px',
+                          paddingBottom: '20px',
+                          borderBottom: '1px solid #e5e7eb'
+                        }}>
+                          <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
+                            🔧 Mantenimiento y Estado
+                          </h3>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                            gap: '15px'
+                          }}>
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Estado Actual *
+                              </label>
+                              <select
+                                required
+                                value={vehicleFormData.estado}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, estado: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="disponible">✅ Disponible</option>
+                                <option value="en_uso">🔧 En Uso</option>
+                                <option value="mantenimiento">🔧 En Mantenimiento</option>
+                                <option value="fuera_servicio">❌ Fuera de Servicio</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Última Mantención
+                              </label>
+                              <input
+                                type="date"
+                                value={vehicleFormData.ultimoMantenimiento}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, ultimoMantenimiento: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Próxima Mantención
+                              </label>
+                              <input
+                                type="date"
+                                value={vehicleFormData.proximoMantenimiento}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, proximoMantenimiento: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Taller de Mantención
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.tallerMantenimiento}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, tallerMantenimiento: e.target.value })}
+                                placeholder="Nombre del taller"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* SECCIÓN 6: COSTOS Y CICLO DE VIDA */}
+                        <div style={{
+                          marginBottom: '25px',
+                          paddingBottom: '20px',
+                          borderBottom: '1px solid #e5e7eb'
+                        }}>
+                          <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
+                            💰 Costos y Ciclo de Vida
+                          </h3>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                            gap: '15px'
+                          }}>
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Costo Combustible Mensual (CLP)
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.costoCombustibleMensual}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, costoCombustibleMensual: parseInt(e.target.value) })}
+                                placeholder="0"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Costo Seguro Anual (CLP)
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.costoSeguroAnual}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, costoSeguroAnual: parseInt(e.target.value) })}
+                                placeholder="0"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Vida Útil Estimada (años)
+                              </label>
+                              <input
+                                type="number"
+                                value={vehicleFormData.vidaUtilEstimada}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, vidaUtilEstimada: parseInt(e.target.value) })}
+                                placeholder="10"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                Estado Patrimonial
+                              </label>
+                              <select
+                                value={vehicleFormData.estadoPatrimonial}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, estadoPatrimonial: e.target.value })}
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <option value="activo">Activo</option>
+                                <option value="baja">Baja</option>
+                                <option value="en_proceso_baja">En Proceso de Baja</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* OBSERVACIONES GENERALES */}
+                        <div style={{ marginBottom: '25px' }}>
                           <label style={{
                             display: 'block',
-                            marginBottom: '8px',
+                            marginBottom: '6px',
                             color: '#374151',
                             fontSize: '14px',
                             fontWeight: '500'
                           }}>
-                            Localidad/Sector
+                            📝 Observaciones Generales
                           </label>
-                          <input
-                            type="text"
-                            value={formData.localidad || ''}
-                            onChange={(e) => setFormData({ ...formData, localidad: e.target.value })}
-                            placeholder="Ej: Sector Norte, Villa Los Aromos"
+                          <textarea
+                            value={vehicleFormData.observaciones}
+                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, observaciones: e.target.value })}
+                            placeholder="Notas adicionales sobre el vehículo..."
+                            rows={4}
                             style={{
                               width: '100%',
                               padding: '10px',
@@ -3949,215 +6635,139 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                             }}
                           />
                         </div>
-                      )}
-                    </div>
 
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                      <button
-                        type="submit"
-                        disabled={loading || (formData.licenciaBloqueada && !formData.motivoBloqueo)}
-                        style={{
-                          padding: '12px 24px',
-                          background: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? '#9ca3af' : '#22c55e',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '16px',
-                          fontWeight: '500',
-                          cursor: loading || (formData.licenciaBloqueada && !formData.motivoBloqueo) ? 'not-allowed' : 'pointer'
-                        }}
-                      >
-                        {loading ? 'Actualizando...' : '✅ Guardar Cambios'}
-                      </button>
+                        {/* BOTONES DE ACCIÓN */}
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button
+                            type="submit"
+                            disabled={loading}
+                            style={{
+                              padding: '12px 24px',
+                              background: loading ? '#9ca3af' : '#22c55e',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '16px',
+                              fontWeight: '500',
+                              cursor: loading ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            {loading ? 'Guardando...' : editingVehicle ? '✅ Actualizar Vehículo' : '✅ Registrar Vehículo'}
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowEditUserForm(false);
-                          setEditingUser(null);
-                          setFormData({
-                            email: '',
-                            password: '',
-                            name: '',
-                            role: 'trabajador',
-                            phone: '',
-                            vehicleId: '',
-                            localidad: '',
-                            recoveryPin: '',
-                            rut: '',
-                            licenciaConducir: '',
-                            licenciasConducir: [],
-                            fechaVencimientoLicencia: '',
-                            observacionesLicencia: '',
-                            licenciaBloqueada: false,
-                            motivoBloqueo: '',
-                            fechaBloqueo: ''
-                          });
-                        }}
-                        style={{
-                          padding: '12px 24px',
-                          background: '#6b7280',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '16px',
-                          fontWeight: '500',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
-
-              {/* Lista de usuarios */}
-              <div style={{
-                background: 'white',
-                borderRadius: '12px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  padding: '20px',
-                  borderBottom: '1px solid #e5e7eb',
-                  background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)'
-                }}>
-                  <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>
-                    📋 Lista de Usuarios
-                  </h2>
-                </div>
-
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#f9fafb' }}>
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Nombre
-                        </th>
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Email
-                        </th>
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Rol
-                        </th>
-                        {users.some(u => u.role === 'junta_vecinos') && (
-                          <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                            Localidad
-                          </th>
-                        )}
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Teléfono
-                        </th>
-                        <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Acciones
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {users.map((user) => {
-                        // Calcular estado de licencia DENTRO del map para cada usuario
-                        let estadoLicencia = null;
-                        if (user.fechaVencimientoLicencia && (user.licenciaConducir || (user.licenciasConducir && user.licenciasConducir.length > 0))) {
-                          const fechaVencimiento = new Date(user.fechaVencimientoLicencia);
-                          const hoy = new Date();
-                          const diasRestantes = Math.ceil((fechaVencimiento - hoy) / (1000 * 60 * 60 * 24));
-
-                          if (diasRestantes < 0) {
-                            estadoLicencia = { tipo: 'vencida', texto: 'VENCIDA', color: '#ef4444' };
-                          } else if (diasRestantes <= 14) {
-                            estadoLicencia = { tipo: 'porVencer', texto: `${diasRestantes} días`, color: '#f59e0b' };
-                          } else {
-                            estadoLicencia = { tipo: 'vigente', texto: 'Vigente', color: '#22c55e' };
-                          }
-                        }
-
-                        return (
-                          <tr key={user.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                            <td style={{ padding: '16px 20px', fontSize: '14px', color: '#1f2937' }}>
-                              {user.name}
-                            </td>
-                            <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
-                              {user.email}
-                            </td>
-                            <td style={{ padding: '16px 20px' }}>
-                              <span style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px',
+                          {editingVehicle && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingVehicle(null);
+                                setShowVehicleForm(false);
+                                // Resetear formulario con todos los campos nuevos
+                                setVehicleFormData({
+                                  // ... todos los campos iniciales
+                                });
+                              }}
+                              style={{
+                                padding: '12px 24px',
+                                background: '#6b7280',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '16px',
                                 fontWeight: '500',
-                                background: user.role === 'superadmin' ? '#ede9fe' :
-                                  user.role === 'admin' ? '#dbeafe' :
-                                    user.role === 'junta_vecinos' ? '#fef3c7' : '#dcfce7',
-                                color: user.role === 'superadmin' ? '#6b21a8' :
-                                  user.role === 'admin' ? '#1e40af' :
-                                    user.role === 'junta_vecinos' ? '#92400e' : '#15803d'
-                              }}>
-                                {user.role === 'superadmin' ? '🔐 Super Admin' :
-                                  user.role === 'admin' ? '👨‍💼 Admin' :
-                                    user.role === 'junta_vecinos' ? '🏘️ Junta Vecinos' : '👷 Trabajador'}
-                              </span>
-                            </td>
-                            {users.some(u => u.role === 'junta_vecinos') && (
-                              <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
-                                {user.localidad || '-'}
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Cancelar Edición
+                            </button>
+                          )}
+                        </div>
+                      </form>
+                    </div>
+                  )}
+
+                  {/* Lista de vehículos */}
+                  <div style={{
+                    background: 'white',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      padding: '20px',
+                      borderBottom: '1px solid #e5e7eb'
+                    }}>
+                      <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>
+                        🚛 Lista de Vehículos y Maquinaria
+                      </h2>
+                    </div>
+
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: '#f9fafb' }}>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Nombre
+                            </th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Tipo
+                            </th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Marca/Modelo
+                            </th>
+                            <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Estado
+                            </th>
+                            <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                              Acciones
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vehiculos.map((vehiculo) => (
+                            <tr key={vehiculo.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                              <td style={{ padding: '16px 20px', fontSize: '14px', color: '#1f2937', fontWeight: '500' }}>
+                                {vehiculo.nombre}
                               </td>
-                            )}
-                            <td style={{ padding: '16px 20px' }}>
-                              {/* Columna de Licencia con todos los indicadores */}
-                              {(user.licenciaConducir || (user.licenciasConducir && user.licenciasConducir.length > 0)) ? (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <span style={{ fontSize: '12px', fontWeight: '500' }}>
-                                    {user.licenciasConducir ? user.licenciasConducir.join(', ') : `Clase ${user.licenciaConducir}`}
-                                  </span>
-
-                                  {/* Indicador de licencia bloqueada */}
-                                  {user.licenciaBloqueada && (
-                                    <span style={{
-                                      padding: '2px 6px',
-                                      borderRadius: '4px',
-                                      fontSize: '11px',
-                                      fontWeight: '600',
-                                      background: '#ef4444',
-                                      color: 'white'
-                                    }}>
-                                      🚫 BLOQUEADA
-                                    </span>
-                                  )}
-
-                                  {/* Indicador de lentes */}
-                                  {user.observacionesLicencia && user.observacionesLicencia.includes('lentes') && (
-                                    <span title={user.observacionesLicencia}>👓</span>
-                                  )}
-
-                                  {/* Estado de vencimiento */}
-                                  {estadoLicencia && !user.licenciaBloqueada && (
-                                    <span style={{
-                                      padding: '2px 6px',
-                                      borderRadius: '4px',
-                                      fontSize: '11px',
-                                      fontWeight: '600',
-                                      background: estadoLicencia.color + '20',
-                                      color: estadoLicencia.color,
-                                      border: `1px solid ${estadoLicencia.color}`
-                                    }}>
-                                      {estadoLicencia.tipo === 'vencida' && '⚠️'} {estadoLicencia.texto}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span style={{ color: '#9ca3af', fontSize: '12px' }}>Sin licencia</span>
-                              )}
-                            </td>
-                            <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
-                              {user.phone || '-'}
-                            </td>
-                            <td style={{ padding: '16px 20px', textAlign: 'center' }}>
-                              {user.id !== currentUser.uid ? (
-                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <td style={{ padding: '16px 20px' }}>
+                                <span style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: '500',
+                                  background: '#e0f2fe',
+                                  color: '#075985'
+                                }}>
+                                  {(() => {
+                                    const tipo = tiposVehiculo.find(t => t.id === vehiculo.tipo);
+                                    return tipo ? `${tipo.icon} ${tipo.nombre}` : vehiculo.tipo;
+                                  })()}
+                                </span>
+                              </td>
+                              <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
+                                {vehiculo.marca} {vehiculo.modelo}
+                              </td>
+                              <td style={{ padding: '16px 20px' }}>
+                                <span style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: '500',
+                                  background: vehiculo.estado === 'disponible' ? '#dcfce7' :
+                                    vehiculo.estado === 'en_uso' ? '#dbeafe' :
+                                      vehiculo.estado === 'mantenimiento' ? '#fef3c7' : '#fee2e2',
+                                  color: vehiculo.estado === 'disponible' ? '#15803d' :
+                                    vehiculo.estado === 'en_uso' ? '#1e40af' :
+                                      vehiculo.estado === 'mantenimiento' ? '#92400e' : '#991b1b'
+                                }}>
+                                  {vehiculo.estado === 'disponible' ? '✅ Disponible' :
+                                    vehiculo.estado === 'en_uso' ? '🔧 En Uso' :
+                                      vehiculo.estado === 'mantenimiento' ? '🔧 Mantenimiento' : '❌ Fuera Servicio'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '16px 20px', textAlign: 'center' }}>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
                                   <button
-                                    onClick={() => handleEditUser(user)}
+                                    onClick={() => handleEditVehicle(vehiculo)}
                                     style={{
                                       padding: '6px 12px',
                                       background: '#3b82f6',
@@ -4171,7 +6781,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                     ✏️ Editar
                                   </button>
                                   <button
-                                    onClick={() => handleDeleteUser(user.id)}
+                                    onClick={() => handleDeleteVehicle(vehiculo.id)}
                                     style={{
                                       padding: '6px 12px',
                                       background: '#ef4444',
@@ -4182,2614 +6792,55 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                       cursor: 'pointer'
                                     }}
                                   >
-                                    🗑️ Eliminar
+                                    🗑️
                                   </button>
-                                  <button
-                                    onClick={() => handleExportSingleUserPDF(user)}
-                                    style={{
-                                      padding: '6px 12px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '4px',
-                                      fontSize: '12px',
-                                      cursor: 'pointer'
-                                    }}
-                                  >
-                                    📕 Exportar
-                                  </button>
+
+
                                 </div>
-                              ) : (
-                                <span style={{
-                                  padding: '6px 12px',
-                                  background: '#e5e7eb',
-                                  color: '#6b7280',
-                                  borderRadius: '4px',
-                                  fontSize: '12px'
-                                }}>
-                                  Usuario actual
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-
-                  {users.length === 0 && (
-                    <div style={{
-                      padding: '40px',
-                      textAlign: 'center',
-                      color: '#6b7280'
-                    }}>
-                      <div style={{ fontSize: '48px', marginBottom: '10px' }}>👥</div>
-                      <p style={{ fontSize: '16px' }}>No hay usuarios registrados</p>
-                      <p style={{ fontSize: '14px' }}>Haz clic en "Crear Nuevo Usuario" para comenzar</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* CONTENIDO DE VEHÍCULOS */}
-          {activeTab === 'vehicles' && (
-            <>
-              <h1 style={{
-                margin: '0 0 30px 0',
-                color: '#1e293b',
-                fontSize: '28px',
-                fontWeight: '600'
-              }}>
-                🚛 Gestión de Vehículos y Maquinaria
-              </h1>
-
-              {/* Estadísticas de vehículos */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '150px' : '200px'}, 1fr))`,
-                gap: '15px',
-                marginBottom: '30px'
-              }}>
-                <div style={{
-                  background: 'white',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #3b82f6'
-                }}>
-                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
-                    {getVehicleStats().total}
-                  </div>
-                  <div style={{ color: '#6b7280', fontSize: '13px' }}>📊 Total</div>
-                </div>
-
-                <div style={{
-                  background: 'white',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #22c55e'
-                }}>
-                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
-                    {getVehicleStats().disponibles}
-                  </div>
-                  <div style={{ color: '#6b7280', fontSize: '13px' }}>✅ Disponibles</div>
-                </div>
-
-                <div style={{
-                  background: 'white',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #f59e0b'
-                }}>
-                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
-                    {getVehicleStats().enUso}
-                  </div>
-                  <div style={{ color: '#6b7280', fontSize: '13px' }}>🔧 En Uso</div>
-                </div>
-
-                <div style={{
-                  background: 'white',
-                  padding: '20px',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  borderLeft: '4px solid #ef4444'
-                }}>
-                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937' }}>
-                    {getVehicleStats().mantenimiento}
-                  </div>
-                  <div style={{ color: '#6b7280', fontSize: '13px' }}>🔧 Mantenimiento</div>
-                </div>
-              </div>
-
-              {/* Botones de acción */}
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
-                <button
-                  onClick={() => {
-                    setShowVehicleForm(!showVehicleForm);
-                    if (showVehicleForm) {
-                      setEditingVehicle(null);
-                      setVehicleFormData({
-                        nombre: '',
-                        tipo: '',
-                        marca: '',
-                        modelo: '',
-                        año: new Date().getFullYear(),
-                        patente: '',
-                        color: '',
-                        numeroChasis: '',
-                        numeroMotor: '',
-                        kilometraje: 0,
-                        capacidadCombustible: 0,
-                        tipoCombustible: 'gasolina',
-                        ultimoMantenimiento: '',
-                        proximoMantenimiento: '',
-                        kilometrajeUltimoMantenimiento: 0,
-                        kilometrajeProximoMantenimiento: 0,
-                        fechaRevisionTecnica: '',
-                        fechaSeguro: '',
-                        fechaPermisoCirculacion: '',
-                        operadorAsignado: '',
-                        estado: 'disponible',
-                        lat: null,
-                        lng: null,
-                        observaciones: ''
-                      });
-                    }
-                  }}
-                  style={{
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #3b82f6 0%, #1e40af 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {showVehicleForm ? '✖ Cancelar' : '➕ Registrar Nuevo Vehículo'}
-                </button>
-
-                <button
-                  onClick={() => setShowTipoModal(true)}
-                  style={{
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  ⚙️ Gestionar Tipos de Vehículos
-                </button>
-                <button
-                  onClick={handleExportVehiclesPDF}
-                  style={{
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #dd8b2cff 0%, #ee1f10ff 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '16px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  📕 Exportar a PDF
-                </button>
-              </div>
-
-              {/* Formulario de vehículo */}
-              {/* Formulario de vehículo AMPLIADO */}
-              {showVehicleForm && (
-                <div style={{
-                  background: 'white',
-                  padding: '30px',
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                  marginBottom: '30px'
-                }}>
-                  <h2 style={{ margin: '0 0 20px 0', color: '#1f2937', fontSize: '20px' }}>
-                    {editingVehicle ? '✏️ Editar Vehículo' : '🚛 Registrar Nuevo Vehículo'}
-                  </h2>
-
-                  <form onSubmit={handleCreateOrUpdateVehicle}>
-                    {/* SECCIÓN 1: DATOS GENERALES */}
-                    <div style={{
-                      marginBottom: '25px',
-                      paddingBottom: '20px',
-                      borderBottom: '1px solid #e5e7eb'
-                    }}>
-                      <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
-                        📋 Datos Generales
-                      </h3>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                        gap: '15px'
-                      }}>
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Nombre/Identificación *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={vehicleFormData.nombre}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, nombre: e.target.value })}
-                            placeholder="Ej: Camión 01, Retroexcavadora 02"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Tipo de Vehículo *
-                          </label>
-                          <select
-                            required
-                            value={vehicleFormData.tipo}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, tipo: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="">-- Seleccionar tipo --</option>
-                            {tiposVehiculo.map(tipo => (
-                              <option key={tipo.id} value={tipo.id}>
-                                {tipo.icon} {tipo.nombre}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Marca *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={vehicleFormData.marca}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, marca: e.target.value })}
-                            placeholder="Ej: Toyota, Caterpillar"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Modelo *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={vehicleFormData.modelo}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, modelo: e.target.value })}
-                            placeholder="Ej: Hilux, 320D"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Año
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.año}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, año: parseInt(e.target.value) })}
-                            min="1990"
-                            max={new Date().getFullYear() + 1}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Patente *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={vehicleFormData.patente}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, patente: e.target.value })}
-                            placeholder="Ej: XX-XX-99"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            N° VIN/Chasis
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.vin}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, vin: e.target.value })}
-                            placeholder="Número de chasis"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            N° Motor
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.numeroMotor}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, numeroMotor: e.target.value })}
-                            placeholder="Número de motor"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Color
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.color}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, color: e.target.value })}
-                            placeholder="Ej: Blanco"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Modalidad de Adquisición
-                          </label>
-                          <select
-                            value={vehicleFormData.modalidadAdquisicion}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, modalidadAdquisicion: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="compra">Compra</option>
-                            <option value="leasing">Leasing</option>
-                            <option value="arriendo">Arriendo</option>
-                            <option value="donacion">Donación</option>
-                            <option value="comodato">Comodato</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Proveedor
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.proveedor}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, proveedor: e.target.value })}
-                            placeholder="Nombre del proveedor"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Valor de Adquisición (CLP)
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.valorAdquisicion}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, valorAdquisicion: parseInt(e.target.value) })}
-                            placeholder="0"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    {/* SECCIÓN DE LICENCIAS REQUERIDAS - NUEVO */}
-                    <div style={{
-                      marginBottom: '25px',
-                      paddingBottom: '20px',
-                      borderBottom: '1px solid #e5e7eb'
-                    }}>
-                      <h3 style={{
-                        margin: '0 0 15px 0',
-                        color: '#374151',
-                        fontSize: '16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}>
-                        🚗 Licencias Requeridas para Operar
-                        <span style={{
-                          fontSize: '12px',
-                          color: '#6b7280',
-                          fontWeight: '400'
-                        }}>
-                          (El operador debe tener al menos una de estas licencias)
-                        </span>
-                      </h3>
-
-                      <div style={{
-                        padding: '15px',
-                        background: '#f9fafb',
-                        borderRadius: '8px',
-                        border: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '10px',
-                          marginBottom: '10px'
-                        }}>
-                          {['B', 'C', 'A1', 'A2', 'A3', 'A4', 'A5', 'D', 'E', 'F'].map(licencia => (
-                            <label key={licencia} style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              padding: '8px 15px',
-                              background: vehicleFormData.licenciasRequeridas?.includes(licencia) ? '#3b82f6' : 'white',
-                              color: vehicleFormData.licenciasRequeridas?.includes(licencia) ? 'white' : '#374151',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              border: '2px solid',
-                              borderColor: vehicleFormData.licenciasRequeridas?.includes(licencia) ? '#3b82f6' : '#d1d5db',
-                              transition: 'all 0.2s',
-                              fontWeight: '500'
-                            }}>
-                              <input
-                                type="checkbox"
-                                value={licencia}
-                                checked={vehicleFormData.licenciasRequeridas?.includes(licencia) || false}
-                                onChange={(e) => {
-                                  const newLicencias = e.target.checked
-                                    ? [...(vehicleFormData.licenciasRequeridas || []), licencia]
-                                    : vehicleFormData.licenciasRequeridas.filter(l => l !== licencia);
-                                  setVehicleFormData({ ...vehicleFormData, licenciasRequeridas: newLicencias });
-                                }}
-                                style={{ display: 'none' }}
-                              />
-                              <span>Clase {licencia}</span>
-                            </label>
+                              </td>
+                            </tr>
                           ))}
-                        </div>
+                        </tbody>
+                      </table>
 
+                      {vehiculos.length === 0 && (
                         <div style={{
-                          padding: '10px',
-                          background: '#fef3c7',
-                          borderRadius: '6px',
-                          fontSize: '13px',
-                          color: '#92400e'
-                        }}>
-                          <strong>⚠️ Importante:</strong> Solo los trabajadores con al menos una de las licencias seleccionadas podrán ser asignados a este vehículo.
-                        </div>
-
-                        {/* Referencia de tipos de licencia */}
-                        <div style={{
-                          marginTop: '10px',
-                          padding: '10px',
-                          background: 'white',
-                          borderRadius: '6px',
-                          fontSize: '12px',
+                          padding: '40px',
+                          textAlign: 'center',
                           color: '#6b7280'
                         }}>
-                          <div style={{ fontWeight: '600', marginBottom: '5px' }}>📖 Referencia de Clases:</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '5px' }}>
-                            <div>• <strong>B:</strong> Vehículos particulares</div>
-                            <div>• <strong>C:</strong> Motocicletas</div>
-                            <div>• <strong>A1:</strong> Taxis</div>
-                            <div>• <strong>A2:</strong> Buses pequeños</div>
-                            <div>• <strong>A3:</strong> Taxis y ambulancias</div>
-                            <div>• <strong>A4:</strong> Transporte de carga</div>
-                            <div>• <strong>A5:</strong> Todo tipo de vehículos</div>
-                            <div>• <strong>D:</strong> Maquinaria automotriz</div>
-                            <div>• <strong>E:</strong> Tracción animal</div>
-                            <div>• <strong>F:</strong> Vehículos adaptados</div>
-                          </div>
+                          No hay vehículos registrados. Haz clic en "Registrar Nuevo Vehículo" para comenzar.
                         </div>
-                      </div>
-                    </div>
-
-                    {/* SECCIÓN 2: ESPECIFICACIONES TÉCNICAS */}
-                    <div style={{
-                      marginBottom: '25px',
-                      paddingBottom: '20px',
-                      borderBottom: '1px solid #e5e7eb'
-                    }}>
-                      <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
-                        ⚙️ Especificaciones Técnicas
-                      </h3>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                        gap: '15px'
-                      }}>
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Tipo de Combustible
-                          </label>
-                          <select
-                            value={vehicleFormData.tipoCombustible}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, tipoCombustible: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="gasolina">Gasolina</option>
-                            <option value="diesel">Diesel</option>
-                            <option value="electrico">Eléctrico</option>
-                            <option value="hibrido">Híbrido</option>
-                            <option value="gas">Gas</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Cilindrada (cc)
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.cilindrada}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, cilindrada: e.target.value })}
-                            placeholder="Ej: 2400"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Potencia (HP)
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.potencia}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, potencia: e.target.value })}
-                            placeholder="Ej: 150"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Transmisión
-                          </label>
-                          <select
-                            value={vehicleFormData.transmision}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, transmision: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="manual">Manual</option>
-                            <option value="automatica">Automática</option>
-                            <option value="secuencial">Secuencial</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Tracción
-                          </label>
-                          <select
-                            value={vehicleFormData.traccion}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, traccion: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="4x2">4x2</option>
-                            <option value="4x4">4x4</option>
-                            <option value="6x4">6x4</option>
-                            <option value="6x6">6x6</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Capacidad de Pasajeros
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.capacidadPasajeros}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, capacidadPasajeros: parseInt(e.target.value) })}
-                            placeholder="0"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Capacidad de Carga (kg)
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.capacidadCarga}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, capacidadCarga: parseInt(e.target.value) })}
-                            placeholder="0"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Equipamiento Adicional
-                          </label>
-                          <textarea
-                            value={vehicleFormData.equipamientoAdicional}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, equipamientoAdicional: e.target.value })}
-                            placeholder="Ej: Barra de luces, winche, etc."
-                            rows={2}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    {/* SECCIÓN 3: DOCUMENTACIÓN LEGAL */}
-                    <div style={{
-                      marginBottom: '25px',
-                      paddingBottom: '20px',
-                      borderBottom: '1px solid #e5e7eb'
-                    }}>
-                      <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
-                        📄 Documentación Legal (Chile)
-                      </h3>
-
-                      {/* PARTE 1: CAMPOS DE INFORMACIÓN */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                        gap: '15px',
-                        marginBottom: '20px'
-                      }}>
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            N° Permiso Circulación
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.numeroPermisoCirculacion}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, numeroPermisoCirculacion: e.target.value })}
-                            placeholder="Número de permiso"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Vigencia Permiso Circulación
-                          </label>
-                          <input
-                            type="date"
-                            value={vehicleFormData.vigenciaPermisoCirculacion}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, vigenciaPermisoCirculacion: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Fecha Revisión Técnica
-                          </label>
-                          <input
-                            type="date"
-                            value={vehicleFormData.fechaRevisionTecnica}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, fechaRevisionTecnica: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Vigencia SOAP
-                          </label>
-                          <input
-                            type="date"
-                            value={vehicleFormData.vigenciaSOAP}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, vigenciaSOAP: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            ¿Tiene Seguro Complementario?
-                          </label>
-                          <select
-                            value={vehicleFormData.seguroComplementario}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, seguroComplementario: e.target.value === 'true' })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="false">No</option>
-                            <option value="true">Sí</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Multas Registradas
-                          </label>
-                          <textarea
-                            value={vehicleFormData.multasRegistradas}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, multasRegistradas: e.target.value })}
-                            placeholder="Detalle de multas si existen"
-                            rows={2}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* PARTE 2: CARGA DE DOCUMENTOS DIGITALIZADOS */}
-                      <div style={{
-                        marginTop: '25px',
-                        padding: '20px',
-                        background: '#f9fafb',
-                        borderRadius: '8px'
-                      }}>
-                        <h4 style={{
-                          margin: '0 0 15px 0',
-                          fontSize: '15px',
-                          fontWeight: '600',
-                          color: '#1f2937',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}>
-                          📁 Documentos Digitalizados
-                          <span style={{
-                            fontSize: '12px',
-                            color: '#6b7280',
-                            fontWeight: '400'
-                          }}>
-                            ("(Solo imágenes JPG o PNG - Máx. 10MB)" JPG o PNG - Máx. 10MB)
-                          </span>
-                        </h4>
-                        {/* Aviso importante sobre PDFs */}
-                        <div style={{
-                          padding: '15px',
-                          background: '#fef3c7',
-                          border: '2px solid #f59e0b',
-                          borderRadius: '8px',
-                          marginBottom: '20px'
-                        }}>
-                          <h4 style={{ margin: '0 0 10px 0', color: '#92400e', fontSize: '16px' }}>
-                            📸 IMPORTANTE: Solo se aceptan IMÁGENES
-                          </h4>
-                          <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#78350f' }}>
-                            Los archivos PDF no están soportados. Si tienes documentos en PDF:
-                          </p>
-                          <ol style={{ margin: '0', paddingLeft: '20px', fontSize: '14px', color: '#78350f' }}>
-                            <li>📱 Toma una <strong>FOTO</strong> del documento con tu celular</li>
-                            <li>💻 Haz una <strong>CAPTURA DE PANTALLA</strong> del PDF</li>
-                            <li>🔄 Convierte el PDF a JPG en: <a href="https://www.ilovepdf.com/pdf_to_jpg" target="_blank" rel="noopener noreferrer" style={{ color: '#f59e0b' }}>iLovePDF.com</a></li>
-                          </ol>
-                        </div>
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '280px'}, 1fr))`,
-                          gap: '15px'
-                        }}>
-                          {/* Permiso de Circulación */}
-                          <div style={{
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            padding: '15px',
-                            background: vehicleFormData.documentos?.permisoCirculacion?.url ? '#f0fdf4' : 'white'
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '10px'
-                            }}>
-                              <h5 style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                fontWeight: '600',
-                                color: '#374151'
-                              }}>
-                                📋 Permiso Circulación
-                              </h5>
-                              {vehicleFormData.documentos?.permisoCirculacion?.url && (
-                                <span style={{
-                                  fontSize: '10px',
-                                  padding: '2px 6px',
-                                  background: '#22c55e',
-                                  color: 'white',
-                                  borderRadius: '4px'
-                                }}>
-                                  ✓ Cargado
-                                </span>
-                              )}
-                            </div>
-
-                            {vehicleFormData.documentos?.permisoCirculacion?.url ? (
-                              <div>
-                                <div style={{
-                                  padding: '8px',
-                                  background: '#f9fafb',
-                                  borderRadius: '6px',
-                                  marginBottom: '8px',
-                                  fontSize: '12px'
-                                }}>
-                                  <div style={{
-                                    fontWeight: '500',
-                                    color: '#1f2937',
-                                    marginBottom: '3px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}>
-                                    {vehicleFormData.documentos.permisoCirculacion.nombre}
-                                  </div>
-                                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                                    {new Date(vehicleFormData.documentos.permisoCirculacion.fecha).toLocaleDateString('es-CL')}
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-
-                                  <a href={vehicleFormData.documentos.permisoCirculacion.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#3b82f6',
-                                      color: 'white',
-                                      textAlign: 'center',
-                                      borderRadius: '6px',
-                                      textDecoration: 'none',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    👁️ Ver
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteDocument('permisoCirculacion')}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    🗑️ Eliminar
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <input
-                                  type="file"
-                                  id="permisoCirculacion"
-                                  accept=".jpg,.jpeg,.png"
-                                  onChange={(e) => handleFileUpload(e.target.files[0], 'permisoCirculacion', editingVehicle?.id)}
-                                  style={{ display: 'none' }}
-                                />
-                                <label
-                                  htmlFor="permisoCirculacion"
-                                  style={{
-                                    display: 'block',
-                                    padding: '20px 10px',
-                                    background: '#f9fafb',
-                                    border: '2px dashed #d1d5db',
-                                    borderRadius: '6px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    color: '#6b7280',
-                                    transition: 'all 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = '#3b82f6';
-                                    e.currentTarget.style.background = '#eff6ff';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = '#d1d5db';
-                                    e.currentTarget.style.background = '#f9fafb';
-                                  }}
-                                >
-                                  {uploadProgress.permisoCirculacion ? (
-                                    <div>
-                                      <div style={{ marginBottom: '5px' }}>
-                                        Subiendo... {uploadProgress.permisoCirculacion}%
-                                      </div>
-                                      <div style={{
-                                        width: '100%',
-                                        height: '4px',
-                                        background: '#e5e7eb',
-                                        borderRadius: '2px',
-                                        overflow: 'hidden'
-                                      }}>
-                                        <div style={{
-                                          width: `${uploadProgress.permisoCirculacion}%`,
-                                          height: '100%',
-                                          background: '#3b82f6',
-                                          transition: 'width 0.3s'
-                                        }} />
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
-                                      <div>Click para subir</div>
-                                    </>
-                                  )}
-                                </label>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Revisión Técnica */}
-                          <div style={{
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            padding: '15px',
-                            background: vehicleFormData.documentos?.revisionTecnica?.url ? '#f0fdf4' : 'white'
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '10px'
-                            }}>
-                              <h5 style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                fontWeight: '600',
-                                color: '#374151'
-                              }}>
-                                🔧 Revisión Técnica
-                              </h5>
-                              {vehicleFormData.documentos?.revisionTecnica?.url && (
-                                <span style={{
-                                  fontSize: '10px',
-                                  padding: '2px 6px',
-                                  background: '#22c55e',
-                                  color: 'white',
-                                  borderRadius: '4px'
-                                }}>
-                                  ✓ Cargado
-                                </span>
-                              )}
-                            </div>
-
-                            {vehicleFormData.documentos?.revisionTecnica?.url ? (
-                              <div>
-                                <div style={{
-                                  padding: '8px',
-                                  background: '#f9fafb',
-                                  borderRadius: '6px',
-                                  marginBottom: '8px',
-                                  fontSize: '12px'
-                                }}>
-                                  <div style={{
-                                    fontWeight: '500',
-                                    color: '#1f2937',
-                                    marginBottom: '3px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}>
-                                    {vehicleFormData.documentos.revisionTecnica.nombre}
-                                  </div>
-                                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                                    {new Date(vehicleFormData.documentos.revisionTecnica.fecha).toLocaleDateString('es-CL')}
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-
-                                  <a href={vehicleFormData.documentos.revisionTecnica.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#3b82f6',
-                                      color: 'white',
-                                      textAlign: 'center',
-                                      borderRadius: '6px',
-                                      textDecoration: 'none',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    👁️ Ver
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteDocument('revisionTecnica')}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    🗑️ Eliminar
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <input
-                                  type="file"
-                                  id="revisionTecnica"
-                                  accept=".jpg,.jpeg,.png"
-                                  onChange={(e) => handleFileUpload(e.target.files[0], 'revisionTecnica', editingVehicle?.id)}
-                                  style={{ display: 'none' }}
-                                />
-                                <label
-                                  htmlFor="revisionTecnica"
-                                  style={{
-                                    display: 'block',
-                                    padding: '20px 10px',
-                                    background: '#f9fafb',
-                                    border: '2px dashed #d1d5db',
-                                    borderRadius: '6px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    color: '#6b7280',
-                                    transition: 'all 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = '#3b82f6';
-                                    e.currentTarget.style.background = '#eff6ff';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = '#d1d5db';
-                                    e.currentTarget.style.background = '#f9fafb';
-                                  }}
-                                >
-                                  <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
-                                  <div>Click para subir</div>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Certificado de Gases */}
-                          <div style={{
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            padding: '15px',
-                            background: vehicleFormData.documentos?.certificadoGases?.url ? '#f0fdf4' : 'white'
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '10px'
-                            }}>
-                              <h5 style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                fontWeight: '600',
-                                color: '#374151'
-                              }}>
-                                💨 Certificado de Gases
-                              </h5>
-                              {vehicleFormData.documentos?.certificadoGases?.url && (
-                                <span style={{
-                                  fontSize: '10px',
-                                  padding: '2px 6px',
-                                  background: '#22c55e',
-                                  color: 'white',
-                                  borderRadius: '4px'
-                                }}>
-                                  ✓ Cargado
-                                </span>
-                              )}
-                            </div>
-
-                            {vehicleFormData.documentos?.certificadoGases?.url ? (
-                              <div>
-                                <div style={{
-                                  padding: '8px',
-                                  background: '#f9fafb',
-                                  borderRadius: '6px',
-                                  marginBottom: '8px',
-                                  fontSize: '12px'
-                                }}>
-                                  <div style={{
-                                    fontWeight: '500',
-                                    color: '#1f2937',
-                                    marginBottom: '3px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}>
-                                    {vehicleFormData.documentos.certificadoGases.nombre}
-                                  </div>
-                                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                                    {new Date(vehicleFormData.documentos.certificadoGases.fecha).toLocaleDateString('es-CL')}
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-
-                                  <a href={vehicleFormData.documentos.certificadoGases.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#3b82f6',
-                                      color: 'white',
-                                      textAlign: 'center',
-                                      borderRadius: '6px',
-                                      textDecoration: 'none',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    👁️ Ver
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteDocument('certificadoGases')}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    🗑️ Eliminar
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <input
-                                  type="file"
-                                  id="certificadoGases"
-                                  accept=".jpg,.jpeg,.png"
-                                  onChange={(e) => handleFileUpload(e.target.files[0], 'certificadoGases', editingVehicle?.id)}
-                                  style={{ display: 'none' }}
-                                />
-                                <label
-                                  htmlFor="certificadoGases"
-                                  style={{
-                                    display: 'block',
-                                    padding: '20px 10px',
-                                    background: '#f9fafb',
-                                    border: '2px dashed #d1d5db',
-                                    borderRadius: '6px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    color: '#6b7280',
-                                    transition: 'all 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = '#3b82f6';
-                                    e.currentTarget.style.background = '#eff6ff';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = '#d1d5db';
-                                    e.currentTarget.style.background = '#f9fafb';
-                                  }}
-                                >
-                                  <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
-                                  <div>Click para subir</div>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* SOAP */}
-                          <div style={{
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            padding: '15px',
-                            background: vehicleFormData.documentos?.soap?.url ? '#f0fdf4' : 'white'
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '10px'
-                            }}>
-                              <h5 style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                fontWeight: '600',
-                                color: '#374151'
-                              }}>
-                                🛡️ SOAP
-                              </h5>
-                              {vehicleFormData.documentos?.soap?.url && (
-                                <span style={{
-                                  fontSize: '10px',
-                                  padding: '2px 6px',
-                                  background: '#22c55e',
-                                  color: 'white',
-                                  borderRadius: '4px'
-                                }}>
-                                  ✓ Cargado
-                                </span>
-                              )}
-                            </div>
-
-                            {vehicleFormData.documentos?.soap?.url ? (
-                              <div>
-                                <div style={{
-                                  padding: '8px',
-                                  background: '#f9fafb',
-                                  borderRadius: '6px',
-                                  marginBottom: '8px',
-                                  fontSize: '12px'
-                                }}>
-                                  <div style={{
-                                    fontWeight: '500',
-                                    color: '#1f2937',
-                                    marginBottom: '3px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}>
-                                    {vehicleFormData.documentos.soap.nombre}
-                                  </div>
-                                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                                    {new Date(vehicleFormData.documentos.soap.fecha).toLocaleDateString('es-CL')}
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-
-                                  <a href={vehicleFormData.documentos.soap.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#3b82f6',
-                                      color: 'white',
-                                      textAlign: 'center',
-                                      borderRadius: '6px',
-                                      textDecoration: 'none',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    👁️ Ver
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteDocument('soap')}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    🗑️ Eliminar
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <input
-                                  type="file"
-                                  id="soap"
-                                  accept=".jpg,.jpeg,.png"
-                                  onChange={(e) => handleFileUpload(e.target.files[0], 'soap', editingVehicle?.id)}
-                                  style={{ display: 'none' }}
-                                />
-                                <label
-                                  htmlFor="soap"
-                                  style={{
-                                    display: 'block',
-                                    padding: '20px 10px',
-                                    background: '#f9fafb',
-                                    border: '2px dashed #d1d5db',
-                                    borderRadius: '6px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    color: '#6b7280',
-                                    transition: 'all 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = '#3b82f6';
-                                    e.currentTarget.style.background = '#eff6ff';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = '#d1d5db';
-                                    e.currentTarget.style.background = '#f9fafb';
-                                  }}
-                                >
-                                  <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
-                                  <div>Click para subir</div>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Seguro Complementario */}
-                          <div style={{
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            padding: '15px',
-                            background: vehicleFormData.documentos?.seguroComplementario?.url ? '#f0fdf4' : 'white'
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '10px'
-                            }}>
-                              <h5 style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                fontWeight: '600',
-                                color: '#374151'
-                              }}>
-                                📑 Seguro Complementario
-                              </h5>
-                              {vehicleFormData.documentos?.seguroComplementario?.url && (
-                                <span style={{
-                                  fontSize: '10px',
-                                  padding: '2px 6px',
-                                  background: '#22c55e',
-                                  color: 'white',
-                                  borderRadius: '4px'
-                                }}>
-                                  ✓ Cargado
-                                </span>
-                              )}
-                            </div>
-
-                            {vehicleFormData.documentos?.seguroComplementario?.url ? (
-                              <div>
-                                <div style={{
-                                  padding: '8px',
-                                  background: '#f9fafb',
-                                  borderRadius: '6px',
-                                  marginBottom: '8px',
-                                  fontSize: '12px'
-                                }}>
-                                  <div style={{
-                                    fontWeight: '500',
-                                    color: '#1f2937',
-                                    marginBottom: '3px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}>
-                                    {vehicleFormData.documentos.seguroComplementario.nombre}
-                                  </div>
-                                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                                    {new Date(vehicleFormData.documentos.seguroComplementario.fecha).toLocaleDateString('es-CL')}
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-
-                                  <a href={vehicleFormData.documentos.seguroComplementario.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#3b82f6',
-                                      color: 'white',
-                                      textAlign: 'center',
-                                      borderRadius: '6px',
-                                      textDecoration: 'none',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    👁️ Ver
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteDocument('seguroComplementario')}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    🗑️ Eliminar
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <input
-                                  type="file"
-                                  id="seguroComplementario"
-                                  accept=".jpg,.jpeg,.png"
-                                  onChange={(e) => handleFileUpload(e.target.files[0], 'seguroComplementario', editingVehicle?.id)}
-                                  style={{ display: 'none' }}
-                                />
-                                <label
-                                  htmlFor="seguroComplementario"
-                                  style={{
-                                    display: 'block',
-                                    padding: '20px 10px',
-                                    background: '#f9fafb',
-                                    border: '2px dashed #d1d5db',
-                                    borderRadius: '6px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    color: '#6b7280',
-                                    transition: 'all 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = '#3b82f6';
-                                    e.currentTarget.style.background = '#eff6ff';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = '#d1d5db';
-                                    e.currentTarget.style.background = '#f9fafb';
-                                  }}
-                                >
-                                  <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
-                                  <div>Click para subir</div>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Padrón Municipal */}
-                          <div style={{
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            padding: '15px',
-                            background: vehicleFormData.documentos?.padronMunicipal?.url ? '#f0fdf4' : 'white'
-                          }}>
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              marginBottom: '10px'
-                            }}>
-                              <h5 style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                fontWeight: '600',
-                                color: '#374151'
-                              }}>
-                                🏛️ Padrón Municipal
-                              </h5>
-                              {vehicleFormData.documentos?.padronMunicipal?.url && (
-                                <span style={{
-                                  fontSize: '10px',
-                                  padding: '2px 6px',
-                                  background: '#22c55e',
-                                  color: 'white',
-                                  borderRadius: '4px'
-                                }}>
-                                  ✓ Cargado
-                                </span>
-                              )}
-                            </div>
-
-                            {vehicleFormData.documentos?.padronMunicipal?.url ? (
-                              <div>
-                                <div style={{
-                                  padding: '8px',
-                                  background: '#f9fafb',
-                                  borderRadius: '6px',
-                                  marginBottom: '8px',
-                                  fontSize: '12px'
-                                }}>
-                                  <div style={{
-                                    fontWeight: '500',
-                                    color: '#1f2937',
-                                    marginBottom: '3px',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}>
-                                    {vehicleFormData.documentos.padronMunicipal.nombre}
-                                  </div>
-                                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                                    {new Date(vehicleFormData.documentos.padronMunicipal.fecha).toLocaleDateString('es-CL')}
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-
-                                  <a href={vehicleFormData.documentos.padronMunicipal.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#3b82f6',
-                                      color: 'white',
-                                      textAlign: 'center',
-                                      borderRadius: '6px',
-                                      textDecoration: 'none',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    👁️ Ver
-                                  </a>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteDocument('padronMunicipal')}
-                                    style={{
-                                      flex: 1,
-                                      padding: '6px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '6px',
-                                      cursor: 'pointer',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    🗑️ Eliminar
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <input
-                                  type="file"
-                                  id="padronMunicipal"
-                                  accept=".jpg,.jpeg,.png"
-                                  onChange={(e) => handleFileUpload(e.target.files[0], 'padronMunicipal', editingVehicle?.id)}
-                                  style={{ display: 'none' }}
-                                />
-                                <label
-                                  htmlFor="padronMunicipal"
-                                  style={{
-                                    display: 'block',
-                                    padding: '20px 10px',
-                                    background: '#f9fafb',
-                                    border: '2px dashed #d1d5db',
-                                    borderRadius: '6px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                    color: '#6b7280',
-                                    transition: 'all 0.2s'
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.borderColor = '#3b82f6';
-                                    e.currentTarget.style.background = '#eff6ff';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = '#d1d5db';
-                                    e.currentTarget.style.background = '#f9fafb';
-                                  }}
-                                >
-                                  <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
-                                  <div>Click para subir</div>
-                                </label>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Sección de documentos adicionales */}
-                        <div style={{
-                          marginTop: '20px',
-                          padding: '15px',
-                          background: 'white',
-                          borderRadius: '8px',
-                          border: '1px solid #e5e7eb'
-                        }}>
-                          <h5 style={{
-                            margin: '0 0 12px 0',
-                            fontSize: '14px',
-                            fontWeight: '600',
-                            color: '#374151'
-                          }}>
-                            📂 Otros Documentos
-                          </h5>
-
-                          {/* Lista de documentos adicionales */}
-                          {vehicleFormData.documentos?.otros?.length > 0 && (
-                            <div style={{ marginBottom: '12px' }}>
-                              {vehicleFormData.documentos.otros.map((doc, index) => (
-                                <div key={index} style={{
-                                  padding: '10px',
-                                  background: '#f9fafb',
-                                  borderRadius: '6px',
-                                  marginBottom: '8px',
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center'
-                                }}>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{
-                                      fontWeight: '500',
-                                      fontSize: '13px',
-                                      color: '#1f2937',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap'
-                                    }}>
-                                      📄 {doc.nombre}
-                                    </div>
-                                    <div style={{
-                                      color: '#6b7280',
-                                      fontSize: '11px',
-                                      marginTop: '2px'
-                                    }}>
-                                      {formatFileSize(doc.tamaño)} • {new Date(doc.fecha).toLocaleDateString('es-CL')}
-                                    </div>
-                                  </div>
-                                  <div style={{ display: 'flex', gap: '6px', marginLeft: '10px' }}>
-
-                                    <a href={doc.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      style={{
-                                        padding: '4px 8px',
-                                        background: '#3b82f6',
-                                        color: 'white',
-                                        borderRadius: '4px',
-                                        textDecoration: 'none',
-                                        fontSize: '11px'
-                                      }}
-                                    >
-                                      Ver
-                                    </a>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteDocument('otros', index)}
-                                      style={{
-                                        padding: '4px 8px',
-                                        background: '#ef4444',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '4px',
-                                        cursor: 'pointer',
-                                        fontSize: '11px'
-                                      }}
-                                    >
-                                      Eliminar
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Botón para agregar más documentos */}
-                          <div>
-                            <input
-                              type="file"
-                              id="otrosDocumentos"
-                              accept=".jpg,.jpeg,.png"
-                              onChange={(e) => handleFileUpload(e.target.files[0], 'otros', editingVehicle?.id)}
-                              style={{ display: 'none' }}
-                              disabled={uploadingFile}
-                            />
-                            <label
-                              htmlFor="otrosDocumentos"
-                              style={{
-                                display: 'inline-block',
-                                padding: '8px 16px',
-                                background: uploadingFile ? '#9ca3af' : '#10b981',
-                                color: 'white',
-                                borderRadius: '6px',
-                                cursor: uploadingFile ? 'not-allowed' : 'pointer',
-                                fontSize: '13px',
-                                fontWeight: '500'
-                              }}
-                            >
-                              {uploadingFile ? '⏳ Subiendo...' : '➕ Agregar Documento'}
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    {/* SECCIÓN 4: CONTROL DE OPERACIÓN */}
-                    <div style={{
-                      marginBottom: '25px',
-                      paddingBottom: '20px',
-                      borderBottom: '1px solid #e5e7eb'
-                    }}>
-                      <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
-                        📊 Control de Operación
-                      </h3>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                        gap: '15px'
-                      }}>
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Kilometraje Actual
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.kilometraje}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, kilometraje: parseInt(e.target.value) })}
-                            placeholder="0"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Horas de Uso (Maquinaria)
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.horasUso}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, horasUso: parseInt(e.target.value) })}
-                            placeholder="0"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Consumo Promedio (L/100km)
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.consumoPromedio}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, consumoPromedio: parseFloat(e.target.value) })}
-                            placeholder="0"
-                            step="0.1"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            ¿Tiene GPS/Telemetría?
-                          </label>
-                          <select
-                            value={vehicleFormData.tieneGPS}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, tieneGPS: e.target.value === 'true' })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="false">No</option>
-                            <option value="true">Sí</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* SECCIÓN 5: MANTENIMIENTO */}
-                    <div style={{
-                      marginBottom: '25px',
-                      paddingBottom: '20px',
-                      borderBottom: '1px solid #e5e7eb'
-                    }}>
-                      <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
-                        🔧 Mantenimiento y Estado
-                      </h3>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                        gap: '15px'
-                      }}>
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Estado Actual *
-                          </label>
-                          <select
-                            required
-                            value={vehicleFormData.estado}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, estado: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="disponible">✅ Disponible</option>
-                            <option value="en_uso">🔧 En Uso</option>
-                            <option value="mantenimiento">🔧 En Mantenimiento</option>
-                            <option value="fuera_servicio">❌ Fuera de Servicio</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Última Mantención
-                          </label>
-                          <input
-                            type="date"
-                            value={vehicleFormData.ultimoMantenimiento}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, ultimoMantenimiento: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Próxima Mantención
-                          </label>
-                          <input
-                            type="date"
-                            value={vehicleFormData.proximoMantenimiento}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, proximoMantenimiento: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Taller de Mantención
-                          </label>
-                          <input
-                            type="text"
-                            value={vehicleFormData.tallerMantenimiento}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, tallerMantenimiento: e.target.value })}
-                            placeholder="Nombre del taller"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* SECCIÓN 6: COSTOS Y CICLO DE VIDA */}
-                    <div style={{
-                      marginBottom: '25px',
-                      paddingBottom: '20px',
-                      borderBottom: '1px solid #e5e7eb'
-                    }}>
-                      <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
-                        💰 Costos y Ciclo de Vida
-                      </h3>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
-                        gap: '15px'
-                      }}>
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Costo Combustible Mensual (CLP)
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.costoCombustibleMensual}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, costoCombustibleMensual: parseInt(e.target.value) })}
-                            placeholder="0"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Costo Seguro Anual (CLP)
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.costoSeguroAnual}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, costoSeguroAnual: parseInt(e.target.value) })}
-                            placeholder="0"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Vida Útil Estimada (años)
-                          </label>
-                          <input
-                            type="number"
-                            value={vehicleFormData.vidaUtilEstimada}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, vidaUtilEstimada: parseInt(e.target.value) })}
-                            placeholder="10"
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            color: '#374151',
-                            fontSize: '14px',
-                            fontWeight: '500'
-                          }}>
-                            Estado Patrimonial
-                          </label>
-                          <select
-                            value={vehicleFormData.estadoPatrimonial}
-                            onChange={(e) => setVehicleFormData({ ...vehicleFormData, estadoPatrimonial: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              border: '1px solid #d1d5db',
-                              borderRadius: '6px',
-                              fontSize: '14px'
-                            }}
-                          >
-                            <option value="activo">Activo</option>
-                            <option value="baja">Baja</option>
-                            <option value="en_proceso_baja">En Proceso de Baja</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* OBSERVACIONES GENERALES */}
-                    <div style={{ marginBottom: '25px' }}>
-                      <label style={{
-                        display: 'block',
-                        marginBottom: '6px',
-                        color: '#374151',
-                        fontSize: '14px',
-                        fontWeight: '500'
-                      }}>
-                        📝 Observaciones Generales
-                      </label>
-                      <textarea
-                        value={vehicleFormData.observaciones}
-                        onChange={(e) => setVehicleFormData({ ...vehicleFormData, observaciones: e.target.value })}
-                        placeholder="Notas adicionales sobre el vehículo..."
-                        rows={4}
-                        style={{
-                          width: '100%',
-                          padding: '10px',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          fontSize: '14px'
-                        }}
-                      />
-                    </div>
-
-                    {/* BOTONES DE ACCIÓN */}
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        style={{
-                          padding: '12px 24px',
-                          background: loading ? '#9ca3af' : '#22c55e',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '16px',
-                          fontWeight: '500',
-                          cursor: loading ? 'not-allowed' : 'pointer'
-                        }}
-                      >
-                        {loading ? 'Guardando...' : editingVehicle ? '✅ Actualizar Vehículo' : '✅ Registrar Vehículo'}
-                      </button>
-
-                      {editingVehicle && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingVehicle(null);
-                            setShowVehicleForm(false);
-                            // Resetear formulario con todos los campos nuevos
-                            setVehicleFormData({
-                              // ... todos los campos iniciales
-                            });
-                          }}
-                          style={{
-                            padding: '12px 24px',
-                            background: '#6b7280',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '16px',
-                            fontWeight: '500',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Cancelar Edición
-                        </button>
                       )}
                     </div>
-                  </form>
-                </div>
+                  </div>
+                </>
               )}
 
-              {/* Lista de vehículos */}
-              <div style={{
-                background: 'white',
-                borderRadius: '12px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  padding: '20px',
-                  borderBottom: '1px solid #e5e7eb'
-                }}>
-                  <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>
-                    🚛 Lista de Vehículos y Maquinaria
-                  </h2>
-                </div>
+              {/* CONTENIDO DE SOLICITUDES */}
+              {activeTab === 'solicitudes' && (
+                <>
+                  <h1 style={{
+                    margin: '0 0 30px 0',
+                    color: '#1e293b',
+                    fontSize: '28px',
+                    fontWeight: '600'
+                  }}>
+                    📋 Gestión de Solicitudes
+                  </h1>
 
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#f9fafb' }}>
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Nombre
-                        </th>
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Tipo
-                        </th>
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Marca/Modelo
-                        </th>
-                        <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Estado
-                        </th>
-                        <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
-                          Acciones
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vehiculos.map((vehiculo) => (
-                        <tr key={vehiculo.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                          <td style={{ padding: '16px 20px', fontSize: '14px', color: '#1f2937', fontWeight: '500' }}>
-                            {vehiculo.nombre}
-                          </td>
-                          <td style={{ padding: '16px 20px' }}>
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              fontSize: '12px',
-                              fontWeight: '500',
-                              background: '#e0f2fe',
-                              color: '#075985'
-                            }}>
-                              {(() => {
-                                const tipo = tiposVehiculo.find(t => t.id === vehiculo.tipo);
-                                return tipo ? `${tipo.icon} ${tipo.nombre}` : vehiculo.tipo;
-                              })()}
-                            </span>
-                          </td>
-                          <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
-                            {vehiculo.marca} {vehiculo.modelo}
-                          </td>
-                          <td style={{ padding: '16px 20px' }}>
-                            <span style={{
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              fontSize: '12px',
-                              fontWeight: '500',
-                              background: vehiculo.estado === 'disponible' ? '#dcfce7' :
-                                vehiculo.estado === 'en_uso' ? '#dbeafe' :
-                                  vehiculo.estado === 'mantenimiento' ? '#fef3c7' : '#fee2e2',
-                              color: vehiculo.estado === 'disponible' ? '#15803d' :
-                                vehiculo.estado === 'en_uso' ? '#1e40af' :
-                                  vehiculo.estado === 'mantenimiento' ? '#92400e' : '#991b1b'
-                            }}>
-                              {vehiculo.estado === 'disponible' ? '✅ Disponible' :
-                                vehiculo.estado === 'en_uso' ? '🔧 En Uso' :
-                                  vehiculo.estado === 'mantenimiento' ? '🔧 Mantenimiento' : '❌ Fuera Servicio'}
-                            </span>
-                          </td>
-                          <td style={{ padding: '16px 20px', textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                              <button
-                                onClick={() => handleEditVehicle(vehiculo)}
-                                style={{
-                                  padding: '6px 12px',
-                                  background: '#3b82f6',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                ✏️ Editar
-                              </button>
-                              <button
-                                onClick={() => handleDeleteVehicle(vehiculo.id)}
-                                style={{
-                                  padding: '6px 12px',
-                                  background: '#ef4444',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                🗑️
-                              </button>
-
-
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {vehiculos.length === 0 && (
-                    <div style={{
-                      padding: '40px',
-                      textAlign: 'center',
-                      color: '#6b7280'
-                    }}>
-                      No hay vehículos registrados. Haz clic en "Registrar Nuevo Vehículo" para comenzar.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* CONTENIDO DE SOLICITUDES */}
-          {activeTab === 'solicitudes' && (
-            <>
-              <h1 style={{
-                margin: '0 0 30px 0',
-                color: '#1e293b',
-                fontSize: '28px',
-                fontWeight: '600'
-              }}>
-                📋 Gestión de Solicitudes
-              </h1>
-
-              {/* Puedes agregar aquí el contenido de solicitudes del código original */}
-              <div style={{
-                background: 'white',
-                padding: '40px',
-                borderRadius: '12px',
-                textAlign: 'center',
-                color: '#6b7280'
-              }}>
-                Contenido de solicitudes aquí...
-              </div>
+                  {/* Puedes agregar aquí el contenido de solicitudes del código original */}
+                  <div style={{
+                    background: 'white',
+                    padding: '40px',
+                    borderRadius: '12px',
+                    textAlign: 'center',
+                    color: '#6b7280'
+                  }}>
+                    Contenido de solicitudes aquí...
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

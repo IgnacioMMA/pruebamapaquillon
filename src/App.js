@@ -11,7 +11,7 @@ import SistemaTrabajadoresFirebase from './components/SistemaTrabajadoresFirebas
 import DashboardTrabajador from './components/DashboardTrabajador';
 import ZonesManagement from './components/ZonesManagement';
 import FleetPanel from './components/FleetPanel';
-import JuntaVecinosPanel from './components/JuntaVecinosPanel';
+import MonitorPanel from './components/MonitorPanel';
 import './App.css';
 
 function App() {
@@ -29,7 +29,7 @@ function App() {
 
   useEffect(() => {
     console.log('🚀 Iniciando App...');
-    
+
     // IMPORTANTE: Timeout de seguridad para evitar carga infinita
     const loadingTimeout = setTimeout(() => {
       console.log('⏱️ Timeout alcanzado - forzando fin de carga');
@@ -39,16 +39,16 @@ function App() {
     // Función para verificar localStorage
     const checkLocalStorage = async () => {
       console.log('📦 Verificando localStorage...');
-      
+
       const isAuthenticated = localStorage.getItem('isAuthenticated');
       const storedUserData = localStorage.getItem('userData');
-      
+
       if (isAuthenticated === 'true' && storedUserData) {
         try {
           const userData = JSON.parse(storedUserData);
           console.log('✅ Usuario encontrado en localStorage:', userData.email);
           setUser(userData);
-          
+
           // Establecer vista según el rol
           const savedView = localStorage.getItem('currentView');
           if (savedView) {
@@ -64,7 +64,7 @@ function App() {
               setTrabajadorView('gps');
             }
           }
-          
+
           // Verificar datos en Firestore (sin bloquear)
           try {
             const userDoc = await getDoc(doc(firestore, 'users', userData.uid));
@@ -103,14 +103,14 @@ function App() {
     let unsubscribe;
     try {
       console.log('🔥 Configurando Firebase Auth listener...');
-      
+
       unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         console.log('🔔 Estado de autenticación cambió:', firebaseUser ? 'Usuario presente' : 'Sin usuario');
-        
+
         if (firebaseUser) {
           try {
             const userDoc = await getDoc(doc(firestore, 'users', firebaseUser.uid));
-            
+
             if (userDoc.exists()) {
               const userData = userDoc.data();
               const userInfo = {
@@ -121,14 +121,14 @@ function App() {
                 localidad: userData.localidad,
                 ...userData
               };
-              
+
               console.log('✅ Usuario autenticado:', userInfo.email, 'Rol:', userInfo.role);
               setUser(userInfo);
-              
+
               // Guardar en localStorage
               localStorage.setItem('userData', JSON.stringify(userInfo));
               localStorage.setItem('isAuthenticated', 'true');
-              
+
               // Establecer vista inicial según el rol
               if (userData.role === 'superadmin') {
                 setCurrentView('admin');
@@ -165,7 +165,7 @@ function App() {
           // No hay usuario en Firebase Auth
           const isAuthenticated = localStorage.getItem('isAuthenticated');
           const storedUserData = localStorage.getItem('userData');
-          
+
           if (isAuthenticated === 'true' && storedUserData) {
             console.log('📦 Manteniendo sesión desde localStorage');
             // Ya se manejó en checkLocalStorage
@@ -176,7 +176,7 @@ function App() {
             localStorage.removeItem('userData');
           }
         }
-        
+
         // IMPORTANTE: Siempre quitar el loading al final
         console.log('✅ Finalizando carga');
         setLoading(false);
@@ -205,11 +205,11 @@ function App() {
   const handleLogin = (userData) => {
     console.log('🎉 Login exitoso:', userData.email);
     setUser(userData);
-    
+
     // Guardar en localStorage
     localStorage.setItem('userData', JSON.stringify(userData));
     localStorage.setItem('isAuthenticated', 'true');
-    
+
     // Establecer vista inicial según el rol
     if (userData.role === 'superadmin') {
       setCurrentView('admin');
@@ -229,12 +229,12 @@ function App() {
       localStorage.removeItem('isAuthenticated');
       localStorage.removeItem('userData');
       localStorage.removeItem('currentView');
-      
+
       // Cerrar sesión en Firebase si hay usuario
       if (auth.currentUser) {
         await signOut(auth);
       }
-      
+
       setUser(null);
       setCurrentView('dashboard');
       setTrabajadorView('gps');
@@ -280,10 +280,10 @@ function App() {
             animation: 'spin 1s linear infinite'
           }}></div>
           <h2>Cargando MapaQuillón...</h2>
-          <p style={{ 
-            marginTop: '10px', 
-            fontSize: '14px', 
-            opacity: 0.8 
+          <p style={{
+            marginTop: '10px',
+            fontSize: '14px',
+            opacity: 0.8
           }}>
             Si tarda más de 5 segundos, revisa tu conexión
           </p>
@@ -309,115 +309,113 @@ function App() {
       // SuperAdmin puede acceder a todas las vistas
       if (currentView === 'admin') {
         return (
-          <SuperAdmin 
-            currentUser={user} 
-            onLogout={handleLogout} 
-            onViewChange={setCurrentView} 
-            currentView={currentView} 
+          <SuperAdmin
+            currentUser={user}
+            onLogout={handleLogout}
+            onViewChange={setCurrentView}
+            currentView={currentView}
           />
         );
       } else if (currentView === 'dashboard') {
         return (
-          <MapaQuillonFirebase 
-            currentUser={user} 
-            onLogout={handleLogout} 
-            onViewChange={setCurrentView} 
-            currentView={currentView} 
+          <MapaQuillonFirebase
+            currentUser={user}
+            onLogout={handleLogout}
+            onViewChange={setCurrentView}
+            currentView={currentView}
           />
         );
       } else if (currentView === 'zones') {
         return (
-          <ZonesManagement 
-            currentUser={user} 
-            onLogout={handleLogout} 
-            onViewChange={setCurrentView} 
-            currentView={currentView} 
+          <ZonesManagement
+            currentUser={user}
+            onLogout={handleLogout}
+            onViewChange={setCurrentView}
+            currentView={currentView}
           />
         );
       } else if (currentView === 'fleet') {
         return (
-          <FleetPanel 
-            currentUser={user} 
-            onLogout={handleLogout} 
-            onViewChange={setCurrentView} 
-            currentView={currentView} 
+          <FleetPanel
+            currentUser={user}
+            onLogout={handleLogout}
+            onViewChange={setCurrentView}
+            currentView={currentView}
           />
         );
       }
       // Por defecto mostrar panel de admin
       return (
-        <SuperAdmin 
-          currentUser={user} 
-          onLogout={handleLogout} 
-          onViewChange={setCurrentView} 
-          currentView={currentView} 
+        <SuperAdmin
+          currentUser={user}
+          onLogout={handleLogout}
+          onViewChange={setCurrentView}
+          currentView={currentView}
         />
       );
-    
+
     case 'admin':
       // Admin puede acceder a Dashboard, Zones y Fleet Panel
       if (currentView === 'dashboard') {
         return (
-          <MapaQuillonFirebase 
-            currentUser={user} 
-            onLogout={handleLogout} 
-            onViewChange={setCurrentView} 
-            currentView={currentView} 
+          <MapaQuillonFirebase
+            currentUser={user}
+            onLogout={handleLogout}
+            onViewChange={setCurrentView}
+            currentView={currentView}
           />
         );
       } else if (currentView === 'zones') {
         return (
-          <ZonesManagement 
-            currentUser={user} 
-            onLogout={handleLogout} 
-            onViewChange={setCurrentView} 
-            currentView={currentView} 
+          <ZonesManagement
+            currentUser={user}
+            onLogout={handleLogout}
+            onViewChange={setCurrentView}
+            currentView={currentView}
           />
         );
       } else if (currentView === 'fleet') {
         return (
-          <FleetPanel 
-            currentUser={user} 
-            onLogout={handleLogout} 
-            onViewChange={setCurrentView} 
-            currentView={currentView} 
+          <FleetPanel
+            currentUser={user}
+            onLogout={handleLogout}
+            onViewChange={setCurrentView}
+            currentView={currentView}
           />
         );
       }
       // Por defecto mostrar dashboard
       return (
-        <MapaQuillonFirebase 
-          currentUser={user} 
-          onLogout={handleLogout} 
-          onViewChange={setCurrentView} 
-          currentView={currentView} 
+        <MapaQuillonFirebase
+          currentUser={user}
+          onLogout={handleLogout}
+          onViewChange={setCurrentView}
+          currentView={currentView}
         />
       );
-    
+
     case 'trabajador':
       // Trabajador puede cambiar entre Dashboard y GPS
       if (trabajadorView === 'dashboard') {
         return (
-          <DashboardTrabajador 
-            currentUser={user} 
+          <DashboardTrabajador
+            currentUser={user}
             onLogout={handleLogout}
             onNavigateToGPS={() => setTrabajadorView('gps')}
           />
         );
       } else {
         return (
-          <SistemaTrabajadoresFirebase 
-            currentUser={user} 
+          <SistemaTrabajadoresFirebase
+            currentUser={user}
             onLogout={handleLogout}
             onViewChange={handleTrabajadorViewChange}
           />
         );
       }
-    
-    case 'junta_vecinos':
-      // Junta de Vecinos solo tiene acceso a su panel
-      return <JuntaVecinosPanel currentUser={user} onLogout={handleLogout} />;
-    
+    case 'monitor':
+      return <MonitorPanel currentUser={user} onLogout={handleLogout} />;
+
     default:
       // Si no tiene rol definido, mostrar mensaje
       return (
@@ -445,9 +443,9 @@ function App() {
             <p style={{ color: '#6b7280', marginBottom: '20px' }}>
               Tu cuenta no tiene un rol asignado. Contacta al administrador del sistema.
             </p>
-            <p style={{ 
-              background: '#f3f4f6', 
-              padding: '10px', 
+            <p style={{
+              background: '#f3f4f6',
+              padding: '10px',
               borderRadius: '6px',
               fontSize: '14px',
               color: '#374151',
@@ -455,7 +453,7 @@ function App() {
             }}>
               Usuario: {user.email}
             </p>
-            
+
             <button
               onClick={handleLogout}
               style={{
