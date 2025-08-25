@@ -2,16 +2,41 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" href="%PUBLIC_URL%/escudo-quillon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="MapaQuillón - Sistema de Control de Flota" />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <meta name="theme-color" content="#1e293b" />
+    <meta 
+      name="description" 
+      content="Sistema de Gestión Municipal - Municipalidad de Quillón"
+    />
+    
+    <!-- Open Graph para redes sociales -->
+    <meta property="og:title" content="MapaQuillón" />
+    <meta property="og:description" content="Plataforma de gestión de flota y trabajadores municipales" />
+    <meta property="og:image" content="%PUBLIC_URL%/escudo-quillon.png" />
+    <meta property="og:type" content="website" />
+    
+    <!-- Logo para dispositivos Apple -->
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/escudo-quillon.png" />
+    
+    <!-- Manifest para PWA -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    
+    <!-- Preconnect para optimizar carga de fuentes -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Título de la aplicación -->
     <title>MapaQuillón</title>
   </head>
   <body>
-    <noscript>Necesitas habilitar JavaScript para ejecutar esta aplicación.</noscript>
+    <noscript>
+      <div style="padding: 20px; text-align: center; font-family: Arial, sans-serif;">
+        <h2>JavaScript Requerido</h2>
+        <p>Necesitas habilitar JavaScript para usar MapaQuillón.</p>
+        <p>Por favor, activa JavaScript en la configuración de tu navegador.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
   </body>
 </html>

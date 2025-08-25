@@ -1,4 +1,5 @@
-// src/App.js
+// src/App.js - CORREGIDO con timeout de seguridad
+
 import React, { useState, useEffect } from 'react';
 import { auth, firestore } from './config/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -7,64 +8,253 @@ import Login from './components/Login';
 import SuperAdmin from './components/SuperAdmin';
 import MapaQuillonFirebase from './components/MapaQuillonFirebase';
 import SistemaTrabajadoresFirebase from './components/SistemaTrabajadoresFirebase';
+import DashboardTrabajador from './components/DashboardTrabajador';
+import ZonesManagement from './components/ZonesManagement';
+import FleetPanel from './components/FleetPanel';
+import JuntaVecinosPanel from './components/JuntaVecinosPanel';
 import './App.css';
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState(() => {
+    const savedView = localStorage.getItem('currentView');
+    return savedView || 'admin';
+  });
+  const [trabajadorView, setTrabajadorView] = useState('gps');
 
   useEffect(() => {
-    // Escuchar cambios en el estado de autenticación
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        // Usuario autenticado, obtener su rol desde Firestore
+    localStorage.setItem('currentView', currentView);
+  }, [currentView]);
+
+  useEffect(() => {
+    console.log('🚀 Iniciando App...');
+    
+    // IMPORTANTE: Timeout de seguridad para evitar carga infinita
+    const loadingTimeout = setTimeout(() => {
+      console.log('⏱️ Timeout alcanzado - forzando fin de carga');
+      setLoading(false);
+    }, 5000); // 5 segundos máximo de espera
+
+    // Función para verificar localStorage
+    const checkLocalStorage = async () => {
+      console.log('📦 Verificando localStorage...');
+      
+      const isAuthenticated = localStorage.getItem('isAuthenticated');
+      const storedUserData = localStorage.getItem('userData');
+      
+      if (isAuthenticated === 'true' && storedUserData) {
         try {
-          const userDoc = await getDoc(doc(firestore, 'users', firebaseUser.uid));
+          const userData = JSON.parse(storedUserData);
+          console.log('✅ Usuario encontrado en localStorage:', userData.email);
+          setUser(userData);
           
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            setUser({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              role: userData.role,
-              name: userData.name,
-              ...userData
-            });
+          // Establecer vista según el rol
+          const savedView = localStorage.getItem('currentView');
+          if (savedView) {
+            setCurrentView(savedView);
           } else {
-            // Usuario sin datos en Firestore
-            setUser({
+            if (userData.role === 'superadmin') {
+              setCurrentView('admin');
+            } else if (userData.role === 'admin') {
+              setCurrentView('dashboard');
+            } else if (userData.role === 'junta_vecinos') {
+              setCurrentView('junta_vecinos');
+            } else if (userData.role === 'trabajador') {
+              setTrabajadorView('gps');
+            }
+          }
+          
+          // Verificar datos en Firestore (sin bloquear)
+          try {
+            const userDoc = await getDoc(doc(firestore, 'users', userData.uid));
+            if (userDoc.exists()) {
+              const freshData = userDoc.data();
+              const updatedUser = {
+                uid: userData.uid,
+                email: userData.email,
+                role: freshData.role,
+                name: freshData.name,
+                localidad: freshData.localidad,
+                ...freshData
+              };
+              setUser(updatedUser);
+              localStorage.setItem('userData', JSON.stringify(updatedUser));
+              console.log('✅ Datos actualizados desde Firestore');
+            }
+          } catch (error) {
+            console.error('⚠️ Error verificando Firestore (no crítico):', error);
+            // No es crítico, continuamos con los datos de localStorage
+          }
+        } catch (e) {
+          console.error('❌ Error parseando localStorage:', e);
+          localStorage.removeItem('isAuthenticated');
+          localStorage.removeItem('userData');
+        }
+      } else {
+        console.log('📭 No hay sesión en localStorage');
+      }
+    };
+
+    // Ejecutar verificación de localStorage inmediatamente
+    checkLocalStorage();
+
+    // Configurar listener de Firebase Auth
+    let unsubscribe;
+    try {
+      console.log('🔥 Configurando Firebase Auth listener...');
+      
+      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        console.log('🔔 Estado de autenticación cambió:', firebaseUser ? 'Usuario presente' : 'Sin usuario');
+        
+        if (firebaseUser) {
+          try {
+            const userDoc = await getDoc(doc(firestore, 'users', firebaseUser.uid));
+            
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              const userInfo = {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                role: userData.role,
+                name: userData.name,
+                localidad: userData.localidad,
+                ...userData
+              };
+              
+              console.log('✅ Usuario autenticado:', userInfo.email, 'Rol:', userInfo.role);
+              setUser(userInfo);
+              
+              // Guardar en localStorage
+              localStorage.setItem('userData', JSON.stringify(userInfo));
+              localStorage.setItem('isAuthenticated', 'true');
+              
+              // Establecer vista inicial según el rol
+              if (userData.role === 'superadmin') {
+                setCurrentView('admin');
+              } else if (userData.role === 'admin') {
+                setCurrentView('dashboard');
+              } else if (userData.role === 'junta_vecinos') {
+                setCurrentView('junta_vecinos');
+              } else if (userData.role === 'trabajador') {
+                setTrabajadorView('gps');
+              }
+            } else {
+              console.warn('⚠️ Usuario en Auth pero no en Firestore');
+              const userInfo = {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                role: null
+              };
+              setUser(userInfo);
+              localStorage.setItem('userData', JSON.stringify(userInfo));
+              localStorage.setItem('isAuthenticated', 'true');
+            }
+          } catch (error) {
+            console.error('❌ Error obteniendo datos del usuario:', error);
+            const userInfo = {
               uid: firebaseUser.uid,
               email: firebaseUser.email,
               role: null
-            });
+            };
+            setUser(userInfo);
+            localStorage.setItem('userData', JSON.stringify(userInfo));
+            localStorage.setItem('isAuthenticated', 'true');
           }
-        } catch (error) {
-          console.error('Error al obtener datos del usuario:', error);
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: null
-          });
+        } else {
+          // No hay usuario en Firebase Auth
+          const isAuthenticated = localStorage.getItem('isAuthenticated');
+          const storedUserData = localStorage.getItem('userData');
+          
+          if (isAuthenticated === 'true' && storedUserData) {
+            console.log('📦 Manteniendo sesión desde localStorage');
+            // Ya se manejó en checkLocalStorage
+          } else {
+            console.log('🚪 Sin sesión - limpiando datos');
+            setUser(null);
+            localStorage.removeItem('isAuthenticated');
+            localStorage.removeItem('userData');
+          }
         }
-      } else {
-        setUser(null);
-      }
+        
+        // IMPORTANTE: Siempre quitar el loading al final
+        console.log('✅ Finalizando carga');
+        setLoading(false);
+        clearTimeout(loadingTimeout); // Limpiar el timeout si terminamos antes
+      }, (error) => {
+        // Callback de error para onAuthStateChanged
+        console.error('❌ Error en Firebase Auth:', error);
+        setLoading(false);
+        clearTimeout(loadingTimeout);
+      });
+    } catch (error) {
+      console.error('❌ Error configurando Firebase:', error);
       setLoading(false);
-    });
+      clearTimeout(loadingTimeout);
+    }
 
-    return () => unsubscribe();
+    // Cleanup
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+      clearTimeout(loadingTimeout);
+    };
   }, []);
 
   const handleLogin = (userData) => {
+    console.log('🎉 Login exitoso:', userData.email);
     setUser(userData);
+    
+    // Guardar en localStorage
+    localStorage.setItem('userData', JSON.stringify(userData));
+    localStorage.setItem('isAuthenticated', 'true');
+    
+    // Establecer vista inicial según el rol
+    if (userData.role === 'superadmin') {
+      setCurrentView('admin');
+    } else if (userData.role === 'admin') {
+      setCurrentView('dashboard');
+    } else if (userData.role === 'junta_vecinos') {
+      setCurrentView('junta_vecinos');
+    } else if (userData.role === 'trabajador') {
+      setTrabajadorView('gps');
+    }
   };
 
   const handleLogout = async () => {
+    console.log('👋 Cerrando sesión...');
     try {
-      await signOut(auth);
+      // Limpiar localStorage primero
+      localStorage.removeItem('isAuthenticated');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('currentView');
+      
+      // Cerrar sesión en Firebase si hay usuario
+      if (auth.currentUser) {
+        await signOut(auth);
+      }
+      
       setUser(null);
+      setCurrentView('dashboard');
+      setTrabajadorView('gps');
+      console.log('✅ Sesión cerrada');
     } catch (error) {
-      console.error('Error al cerrar sesión:', error);
+      console.error('❌ Error al cerrar sesión:', error);
+      // Aunque falle Firebase, limpiar la sesión local
+      localStorage.removeItem('isAuthenticated');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('currentView');
+      setUser(null);
+    }
+  };
+
+  // Función para manejar cambio de vista del trabajador
+  const handleTrabajadorViewChange = (view) => {
+    if (view === 'dashboard-trabajador') {
+      setTrabajadorView('dashboard');
+    } else if (view === 'gps') {
+      setTrabajadorView('gps');
     }
   };
 
@@ -90,7 +280,20 @@ function App() {
             animation: 'spin 1s linear infinite'
           }}></div>
           <h2>Cargando MapaQuillón...</h2>
+          <p style={{ 
+            marginTop: '10px', 
+            fontSize: '14px', 
+            opacity: 0.8 
+          }}>
+            Si tarda más de 5 segundos, revisa tu conexión
+          </p>
         </div>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
@@ -103,13 +306,117 @@ function App() {
   // Renderizar según el rol del usuario
   switch (user.role) {
     case 'superadmin':
-      return <SuperAdmin currentUser={user} onLogout={handleLogout} />;
+      // SuperAdmin puede acceder a todas las vistas
+      if (currentView === 'admin') {
+        return (
+          <SuperAdmin 
+            currentUser={user} 
+            onLogout={handleLogout} 
+            onViewChange={setCurrentView} 
+            currentView={currentView} 
+          />
+        );
+      } else if (currentView === 'dashboard') {
+        return (
+          <MapaQuillonFirebase 
+            currentUser={user} 
+            onLogout={handleLogout} 
+            onViewChange={setCurrentView} 
+            currentView={currentView} 
+          />
+        );
+      } else if (currentView === 'zones') {
+        return (
+          <ZonesManagement 
+            currentUser={user} 
+            onLogout={handleLogout} 
+            onViewChange={setCurrentView} 
+            currentView={currentView} 
+          />
+        );
+      } else if (currentView === 'fleet') {
+        return (
+          <FleetPanel 
+            currentUser={user} 
+            onLogout={handleLogout} 
+            onViewChange={setCurrentView} 
+            currentView={currentView} 
+          />
+        );
+      }
+      // Por defecto mostrar panel de admin
+      return (
+        <SuperAdmin 
+          currentUser={user} 
+          onLogout={handleLogout} 
+          onViewChange={setCurrentView} 
+          currentView={currentView} 
+        />
+      );
     
     case 'admin':
-      return <MapaQuillonFirebase currentUser={user} onLogout={handleLogout} />;
+      // Admin puede acceder a Dashboard, Zones y Fleet Panel
+      if (currentView === 'dashboard') {
+        return (
+          <MapaQuillonFirebase 
+            currentUser={user} 
+            onLogout={handleLogout} 
+            onViewChange={setCurrentView} 
+            currentView={currentView} 
+          />
+        );
+      } else if (currentView === 'zones') {
+        return (
+          <ZonesManagement 
+            currentUser={user} 
+            onLogout={handleLogout} 
+            onViewChange={setCurrentView} 
+            currentView={currentView} 
+          />
+        );
+      } else if (currentView === 'fleet') {
+        return (
+          <FleetPanel 
+            currentUser={user} 
+            onLogout={handleLogout} 
+            onViewChange={setCurrentView} 
+            currentView={currentView} 
+          />
+        );
+      }
+      // Por defecto mostrar dashboard
+      return (
+        <MapaQuillonFirebase 
+          currentUser={user} 
+          onLogout={handleLogout} 
+          onViewChange={setCurrentView} 
+          currentView={currentView} 
+        />
+      );
     
     case 'trabajador':
-      return <SistemaTrabajadoresFirebase currentUser={user} onLogout={handleLogout} />;
+      // Trabajador puede cambiar entre Dashboard y GPS
+      if (trabajadorView === 'dashboard') {
+        return (
+          <DashboardTrabajador 
+            currentUser={user} 
+            onLogout={handleLogout}
+            onNavigateToGPS={() => setTrabajadorView('gps')}
+          />
+        );
+      } else {
+        return (
+          <SistemaTrabajadoresFirebase 
+            currentUser={user} 
+            onLogout={handleLogout}
+            onViewChange={handleTrabajadorViewChange}
+          />
+        );
+      }
+    
+    case 'junta_vecinos':
+      // Junta de Vecinos solo tiene acceso a su panel
+      return <JuntaVecinosPanel currentUser={user} onLogout={handleLogout} />;
     
     default:
       // Si no tiene rol definido, mostrar mensaje

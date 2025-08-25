@@ -1,773 +1,1641 @@
 // src/components/SistemaTrabajadoresFirebase.js
 import React, { useEffect, useRef, useState } from 'react';
+import { trabajadoresService } from '../services/firebaseservices';
+import { database } from '../config/firebase';
+import { ref, onValue, update, set, push, get } from 'firebase/database';
+import TrabajadorVehiclePanel from './TrabajadorVehiclePanel';
+import { cloudinaryConfig } from '../config/cloudinary';
 
-// Zonas de trabajo disponibles (esto podría venir de Firebase)
-const zonasDisponibles = [
-  { id: 1, nombre: "Obra Sector Norte", lat: -36.741, lng: -72.538, direccion: "Av. Principal 123" },
-  { id: 2, nombre: "Reparación Puente", lat: -36.728, lng: -72.470, direccion: "Puente Los Aromos" },
-  { id: 3, nombre: "Pavimentación Ruta", lat: -36.720, lng: -72.480, direccion: "Ruta Q-45 Km 12" },
-  { id: 4, nombre: "Construcción Plaza", lat: -36.735, lng: -72.465, direccion: "Plaza Central" },
-  { id: 5, nombre: "Mantención Parque", lat: -36.745, lng: -72.455, direccion: "Parque Municipal" },
-];
-
-const SistemaTrabajadoresFirebase = () => {
+const SistemaTrabajadoresFirebase = ({ currentUser, onLogout, onViewChange }) => {
   // Estados principales
-  const mapRef = useRef(null);
-  const [map, setMap] = useState(null);
+  const [showVehiclePanel, setShowVehiclePanel] = useState(false);
   const [userPosition, setUserPosition] = useState(null);
   const [selectedZona, setSelectedZona] = useState(null);
   const [isTracking, setIsTracking] = useState(false);
-  const [isNavigating, setIsNavigating] = useState(false);
-  const [workStatus, setWorkStatus] = useState('idle'); // idle, traveling, working, completed
-  const [workLog, setWorkLog] = useState({
-    startTime: null,
-    arrivalTime: null,
-    endTime: null,
-    zona: null
+  const [workStatus, setWorkStatus] = useState('idle');
+  
+  // Estados para zonas y notificaciones
+  const [zonasAsignadas, setZonasAsignadas] = useState([]);
+  const [notificaciones, setNotificaciones] = useState([]);
+  const [isMobile, setIsMobile] = useState(false);
+  const [toastNotification, setToastNotification] = useState(null);
+  
+  // ESTADOS PARA DOCUMENTOS
+  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({});
+  const [documentos, setDocumentos] = useState({
+    licenciaConducir: { url: '', nombre: '', fecha: '', vencimiento: '' },
+    certificadoOperador: { url: '', nombre: '', fecha: '', vencimiento: '' },
+    certificados: []
   });
+  const [message, setMessage] = useState({ type: '', text: '' });
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   
-  // Referencias para marcadores y servicios
-  const userMarkerRef = useRef(null);
-  const zonaMarkerRef = useRef(null);
-  const directionsServiceRef = useRef(null);
-  const directionsRendererRef = useRef(null);
-  const watchIdRef = useRef(null);
+  // Referencias
+  const toastTimeoutRef = useRef(null);
+  const [gpsStatus, setGpsStatus] = useState('inactive');
+
+  // ========== FUNCIONES COMPLETAS PARA MANEJO DE DOCUMENTOS ==========
   
-  // Estados de UI
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [error, setError] = useState(null);
-  const [distance, setDistance] = useState(null);
-  const [duration, setDuration] = useState(null);
-  const [showWorkLog, setShowWorkLog] = useState(false);
-
-  const API_KEY = 'AIzaSyA7DrdL36n5cx-RNzuXGAQggFeGCheHDbY';
-
-  // Función para cargar Google Maps
-  useEffect(() => {
-    const loadGoogleMaps = () => {
-      return new Promise((resolve, reject) => {
-        if (window.google && window.google.maps) {
-          resolve(window.google.maps);
-          return;
-        }
-
-        const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-        if (existingScript) {
-          existingScript.addEventListener('load', () => {
-            if (window.google && window.google.maps) {
-              resolve(window.google.maps);
-            } else {
-              reject(new Error('Google Maps no disponible'));
-            }
-          });
-          return;
-        }
-
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places,geometry&v=weekly`;
-        script.async = true;
-        script.defer = true;
-
-        script.onload = () => {
-          if (window.google && window.google.maps) {
-            resolve(window.google.maps);
-          } else {
-            reject(new Error('Google Maps no disponible'));
-          }
-        };
-
-        script.onerror = () => {
-          reject(new Error('Error al cargar Google Maps'));
-        };
-
-        document.head.appendChild(script);
-      });
-    };
-
-    const initMap = async () => {
-      try {
-        const maps = await loadGoogleMaps();
-        
-        if (!mapRef.current) return;
-
-        const mapInstance = new maps.Map(mapRef.current, {
-          center: { lat: -36.7333, lng: -72.4667 },
-          zoom: 13,
-          mapTypeId: 'roadmap',
-          zoomControl: true,
-          mapTypeControl: false,
-          scaleControl: false,
-          streetViewControl: false,
-          rotateControl: false,
-          fullscreenControl: true
-        });
-
-        setMap(mapInstance);
-        
-        // Inicializar servicios de direcciones
-        directionsServiceRef.current = new maps.DirectionsService();
-        directionsRendererRef.current = new maps.DirectionsRenderer({
-          map: mapInstance,
-          suppressMarkers: false,
-          polylineOptions: {
-            strokeColor: '#4285F4',
-            strokeWeight: 6,
-            strokeOpacity: 0.8
-          }
-        });
-
-        setMapLoaded(true);
-      } catch (err) {
-        setError('Error al cargar el mapa: ' + err.message);
-      }
-    };
-
-    initMap();
-  }, []);
-
-  // Función para activar/desactivar GPS
-  const toggleGPS = () => {
-    if (isTracking) {
-      // Detener tracking
-      if (watchIdRef.current) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
-      setIsTracking(false);
-      
-      // Limpiar marcador de usuario
-      if (userMarkerRef.current) {
-        userMarkerRef.current.setMap(null);
-        userMarkerRef.current = null;
-      }
-      setUserPosition(null);
-    } else {
-      // Iniciar tracking
-      if (!navigator.geolocation) {
-        alert('Tu navegador no soporta geolocalización');
-        return;
-      }
-
-      setIsTracking(true);
-      
-      // Obtener posición inicial
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const pos = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          };
-          updateUserPosition(pos);
-        },
-        (error) => {
-          console.error('Error al obtener ubicación:', error);
-          alert('Error al obtener tu ubicación. Verifica los permisos de GPS.');
-          setIsTracking(false);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        }
-      );
-
-      // Seguimiento continuo
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-          const pos = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          };
-          updateUserPosition(pos);
-        },
-        (error) => {
-          console.error('Error en tracking:', error);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        }
-      );
-    }
-  };
-
-  // Actualizar posición del usuario en el mapa
-  const updateUserPosition = (position) => {
-    setUserPosition(position);
+  // 1. FUNCIÓN PARA SUBIR ARCHIVOS (COMPLETA Y MEJORADA)
+  const handleFileUpload = async (file, tipoDocumento) => {
+    if (!file) return;
     
-    if (!map || !window.google) return;
-
-    // Crear o actualizar marcador del usuario
-    if (!userMarkerRef.current) {
-      userMarkerRef.current = new window.google.maps.Marker({
-        position: position,
-        map: map,
-        title: 'Tu ubicación',
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: '#4285F4',
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 3
-        },
-        zIndex: 1000
+    // Validación de PDF
+    if (file.type === 'application/pdf') {
+      setMessage({ 
+        type: 'error', 
+        text: '❌ NO se permiten PDFs. Por favor, sube una FOTO o IMAGEN del documento (JPG/PNG).' 
       });
       
-      // Centrar mapa en usuario
-      map.setCenter(position);
-      map.setZoom(15);
-    } else {
-      userMarkerRef.current.setPosition(position);
-    }
-
-    // Si está navegando, actualizar distancia
-    if (isNavigating && selectedZona) {
-      const distance = window.google.maps.geometry.spherical.computeDistanceBetween(
-        new window.google.maps.LatLng(position.lat, position.lng),
-        new window.google.maps.LatLng(selectedZona.lat, selectedZona.lng)
+      alert(
+        '📸 ALTERNATIVAS PARA SUBIR TU DOCUMENTO:\n\n' +
+        '1. Toma una FOTO con tu celular\n' +
+        '2. Haz una CAPTURA DE PANTALLA del PDF\n' +
+        '3. Usa un escáner que guarde como JPG\n' +
+        '4. Convierte el PDF a imagen en: https://www.ilovepdf.com/pdf_to_jpg'
       );
       
-      // Si llegó al destino (menos de 50 metros)
-      if (distance < 50 && workStatus === 'traveling') {
-        handleArrival();
-      }
+      return;
     }
-  };
-
-  // Seleccionar zona de trabajo
-  const selectZona = (zona) => {
-    setSelectedZona(zona);
     
-    if (!map || !window.google) return;
-
-    // Limpiar marcador anterior
-    if (zonaMarkerRef.current) {
-      zonaMarkerRef.current.setMap(null);
+    // Validación de tipo de archivo
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+      setMessage({ 
+        type: 'error', 
+        text: '❌ Solo se permiten imágenes JPG y PNG' 
+      });
+      return;
     }
-
-    // Crear marcador de zona
-    zonaMarkerRef.current = new window.google.maps.Marker({
-      position: { lat: zona.lat, lng: zona.lng },
-      map: map,
-      title: zona.nombre,
-      icon: {
-        path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-        scale: 8,
-        fillColor: '#22c55e',
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 2
-      }
-    });
-
-    // Ajustar vista para mostrar ambos puntos
-    if (userPosition) {
-      const bounds = new window.google.maps.LatLngBounds();
-      bounds.extend(userPosition);
-      bounds.extend({ lat: zona.lat, lng: zona.lng });
-      map.fitBounds(bounds, 100);
-    } else {
-      map.setCenter({ lat: zona.lat, lng: zona.lng });
-      map.setZoom(15);
-    }
-  };
-
-  // Iniciar navegación
-  const startNavigation = () => {
-    if (!selectedZona || !userPosition) {
-      alert('Debes activar el GPS y seleccionar una zona primero');
+    
+    // Validación de tamaño
+    if (file.size > 10 * 1024 * 1024) {
+      setMessage({ 
+        type: 'error', 
+        text: '❌ El archivo no puede superar los 10MB' 
+      });
       return;
     }
 
-    setIsNavigating(true);
-    setWorkStatus('traveling');
-    setWorkLog({
-      ...workLog,
-      startTime: new Date().toISOString(),
-      zona: selectedZona
-    });
+    setUploadingFile(true);
+    setUploadProgress({ [tipoDocumento]: 0 });
 
-    // Calcular y mostrar ruta
-    const request = {
-      origin: userPosition,
-      destination: { lat: selectedZona.lat, lng: selectedZona.lng },
-      travelMode: window.google.maps.TravelMode.DRIVING
-    };
+    try {
+      // Preparar FormData para Cloudinary
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 'vehiculos_docs');
+      
+      const trabajadorId = currentUser.uid || `temp_${Date.now()}`;
+      const timestamp = Date.now();
+      const cleanFileName = file.name.split('.')[0].replace(/[^a-zA-Z0-9_-]/g, '_');
+      
+      formData.append('folder', `municipalidad/trabajadores/${trabajadorId}/${tipoDocumento}`);
+      formData.append('public_id', `${timestamp}_${cleanFileName}`);
+      
+      setUploadProgress({ [tipoDocumento]: 30 });
 
-    directionsServiceRef.current.route(request, (result, status) => {
-      if (status === 'OK') {
-        directionsRendererRef.current.setDirections(result);
-        
-        const route = result.routes[0];
-        const leg = route.legs[0];
-        
-        setDistance(leg.distance.text);
-        setDuration(leg.duration.text);
-      } else {
-        alert('No se pudo calcular la ruta: ' + status);
+      // Subir a Cloudinary
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/image/upload`,
+        {
+          method: 'POST',
+          body: formData
+        }
+      );
+
+      setUploadProgress({ [tipoDocumento]: 60 });
+
+      if (!response.ok) {
+        throw new Error('Error al subir imagen a Cloudinary');
       }
-    });
+
+      const data = await response.json();
+      console.log('✅ Imagen subida a Cloudinary:', data);
+      
+      setUploadProgress({ [tipoDocumento]: 90 });
+
+      // Crear objeto de documento con todos los datos necesarios
+      const documentData = {
+        url: data.secure_url || '',
+        publicId: data.public_id || '',
+        nombre: file.name || 'documento',
+        fecha: new Date().toISOString(),
+        tamaño: file.size || 0,
+        tipo: file.type || 'image/jpeg',
+        vencimiento: '' // Campo opcional para fechas de vencimiento
+      };
+
+      console.log('📄 Datos del documento a guardar:', documentData);
+
+      // Guardar en Firebase PRIMERO
+      await guardarDocumentosEnFirebase(tipoDocumento, documentData);
+
+      // DESPUÉS actualizar el estado local
+      if (tipoDocumento === 'certificados') {
+        setDocumentos(prev => ({
+          ...prev,
+          certificados: [...(prev.certificados || []), documentData]
+        }));
+      } else {
+        setDocumentos(prev => ({
+          ...prev,
+          [tipoDocumento]: documentData
+        }));
+      }
+
+      setUploadProgress({ [tipoDocumento]: 100 });
+      setMessage({ 
+        type: 'success', 
+        text: `✅ ${file.name} subido exitosamente` 
+      });
+      showToast('✅ Documento subido exitosamente', 'success');
+
+      setTimeout(() => {
+        setUploadProgress({});
+        setMessage({ type: '', text: '' });
+      }, 3000);
+
+    } catch (error) {
+      console.error('❌ Error completo:', error);
+      setMessage({ 
+        type: 'error', 
+        text: '❌ Error al subir la imagen: ' + error.message 
+      });
+      showToast('❌ Error al subir el documento', 'error');
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
-  // Manejar llegada a la zona
-  const handleArrival = () => {
-    setWorkStatus('working');
-    setWorkLog({
-      ...workLog,
-      arrivalTime: new Date().toISOString()
-    });
+  // 2. FUNCIÓN PARA GUARDAR EN FIREBASE (CONSISTENTE)
+  const guardarDocumentosEnFirebase = async (tipoDocumento, documentData) => {
+    try {
+      console.log(`🔄 Guardando ${tipoDocumento} en Firebase...`);
+      console.log('📝 Datos a guardar:', documentData);
+      
+      if (!currentUser || !currentUser.uid) {
+        throw new Error('No hay usuario autenticado');
+      }
+      
+      // IMPORTANTE: Guardar siempre en la misma ruta donde se encontraron los documentos
+      // Primero verificar dónde están los documentos actuales
+      const rutaPrincipal = `documentos/${currentUser.uid}`; // Usar esta ruta como principal
+      const rutaAlternativa = `trabajadores/${currentUser.uid}/documentos`;
+      
+      // Verificar si ya hay documentos en alguna ruta
+      const checkRef1 = ref(database, rutaPrincipal);
+      const checkRef2 = ref(database, rutaAlternativa);
+      
+      const snapshot1 = await get(checkRef1);
+      const snapshot2 = await get(checkRef2);
+      
+      // Determinar qué ruta usar basándose en dónde están los documentos existentes
+      let rutaAUsar = rutaPrincipal; // Por defecto usar documentos/uid
+      
+      if (snapshot2.val() && Object.keys(snapshot2.val()).length > 0) {
+        // Si hay documentos en trabajadores/uid/documentos, usar esa
+        rutaAUsar = rutaAlternativa;
+      }
+      
+      console.log(`📍 Usando ruta: ${rutaAUsar}`);
+      
+      if (tipoDocumento === 'certificados') {
+        // Para certificados, usar push para crear una lista
+        const certificadosRef = ref(database, `${rutaAUsar}/certificados`);
+        const newCertRef = push(certificadosRef);
+        await set(newCertRef, documentData);
+        console.log(`✅ Certificado guardado con ID:`, newCertRef.key);
+      } else {
+        // Para licencia y certificado de operador
+        const docRef = ref(database, `${rutaAUsar}/${tipoDocumento}`);
+        await set(docRef, documentData);
+        console.log(`✅ ${tipoDocumento} guardado en Firebase`);
+      }
+      
+      // Verificar que se guardó correctamente
+      const verificarRef = ref(database, rutaAUsar);
+      const snapshot = await get(verificarRef);
+      console.log('📦 Verificación - Documentos guardados:', snapshot.val());
+      
+      // Forzar actualización del estado local inmediatamente
+      const docsActualizados = snapshot.val();
+      if (docsActualizados) {
+        const docsToUpdate = {
+          licenciaConducir: docsActualizados.licenciaConducir || { url: '', nombre: '', fecha: '', vencimiento: '' },
+          certificadoOperador: docsActualizados.certificadoOperador || { url: '', nombre: '', fecha: '', vencimiento: '' },
+          certificados: []
+        };
+        
+        if (docsActualizados.certificados) {
+          docsToUpdate.certificados = Object.entries(docsActualizados.certificados).map(([key, cert]) => ({
+            firebaseKey: key,
+            ...cert
+          }));
+        }
+        
+        console.log('🔄 Actualizando estado local con:', docsToUpdate);
+        setDocumentos(docsToUpdate);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error al guardar en Firebase:', error);
+      throw error;
+    }
+  };
+
+  // 3. FUNCIÓN PARA ELIMINAR DOCUMENTOS
+  const handleDeleteDocument = async (tipoDocumento, index = null) => {
+    if (!window.confirm('¿Estás seguro de eliminar este documento?')) return;
+
+    try {
+      // Primero eliminar de Firebase
+      await eliminarDocumentoDeFirebase(tipoDocumento, index);
+      
+      // Después actualizar el estado local
+      if (tipoDocumento === 'certificados' && index !== null) {
+        setDocumentos(prev => ({
+          ...prev,
+          certificados: prev.certificados.filter((_, i) => i !== index)
+        }));
+      } else {
+        setDocumentos(prev => ({
+          ...prev,
+          [tipoDocumento]: { url: '', nombre: '', fecha: '', vencimiento: '' }
+        }));
+      }
+
+      setMessage({ 
+        type: 'success', 
+        text: '✅ Documento eliminado correctamente' 
+      });
+      showToast('✅ Documento eliminado', 'success');
+      
+      setTimeout(() => {
+        setMessage({ type: '', text: '' });
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Error al eliminar documento:', error);
+      setMessage({ 
+        type: 'error', 
+        text: '❌ Error al eliminar el documento' 
+      });
+    }
+  };
+
+  // 4. FUNCIÓN PARA ELIMINAR DE FIREBASE
+  const eliminarDocumentoDeFirebase = async (tipoDocumento, index) => {
+    try {
+      if (!currentUser || !currentUser.uid) {
+        throw new Error('No hay usuario autenticado');
+      }
+
+      if (tipoDocumento === 'certificados') {
+        // Para certificados, obtener la lista actual y eliminar el específico
+        const certificadosRef = ref(database, `trabajadores/${currentUser.uid}/documentos/certificados`);
+        const snapshot = await get(certificadosRef);
+        const certificadosData = snapshot.val() || {};
+        
+        const certificadosArray = Object.entries(certificadosData);
+        if (index !== null && index < certificadosArray.length) {
+          const [keyToDelete] = certificadosArray[index];
+          const certRef = ref(database, `trabajadores/${currentUser.uid}/documentos/certificados/${keyToDelete}`);
+          await set(certRef, null);
+          console.log(`✅ Certificado ${keyToDelete} eliminado de Firebase`);
+        }
+      } else {
+        // Para otros documentos, simplemente eliminar
+        const docRef = ref(database, `trabajadores/${currentUser.uid}/documentos/${tipoDocumento}`);
+        await set(docRef, null);
+        console.log(`✅ ${tipoDocumento} eliminado de Firebase`);
+      }
+    } catch (error) {
+      console.error('❌ Error al eliminar de Firebase:', error);
+      throw error;
+    }
+  };
+
+  // 5. FUNCIÓN CORREGIDA PARA CARGAR DOCUMENTOS DESDE FIREBASE
+  const cargarDocumentosDesdeFirebase = async () => {
+    if (!currentUser || !currentUser.uid) {
+      console.log('⚠️ No hay usuario para cargar documentos');
+      return null;
+    }
+
+    console.log('🔄 Iniciando carga de documentos para usuario:', currentUser.uid);
+    setIsLoadingDocuments(true);
     
-    alert('¡Has llegado a la zona de trabajo! Puedes iniciar tu tarea.');
+    try {
+      // Primero verificar todas las rutas posibles
+      const rutasPosibles = [
+        `documentos/${currentUser.uid}`, // Primera prioridad (donde están tus documentos actuales)
+        `trabajadores/${currentUser.uid}/documentos` // Segunda prioridad
+      ];
+      
+      let data = null;
+      let rutaEncontrada = null;
+      
+      // Buscar en todas las rutas hasta encontrar datos
+      for (const ruta of rutasPosibles) {
+        const testRef = ref(database, ruta);
+        const snapshot = await get(testRef);
+        const testData = snapshot.val();
+        
+        console.log(`📦 Verificando ruta ${ruta}:`, testData);
+        
+        if (testData && Object.keys(testData).length > 0) {
+          data = testData;
+          rutaEncontrada = ruta;
+          console.log(`✅ Documentos encontrados en: ${ruta}`);
+          break;
+        }
+      }
+      
+      // Si no se encontraron documentos en las rutas específicas, 
+      // buscar en la estructura del trabajador
+      if (!data) {
+        const trabajadorRef = ref(database, `trabajadores/${currentUser.uid}`);
+        const trabajadorSnapshot = await get(trabajadorRef);
+        const trabajadorData = trabajadorSnapshot.val();
+        
+        console.log('👷 Datos del trabajador:', trabajadorData);
+        
+        if (trabajadorData?.documentos) {
+          data = trabajadorData.documentos;
+          rutaEncontrada = `trabajadores/${currentUser.uid}/documentos (dentro del objeto trabajador)`;
+          console.log('✅ Documentos encontrados dentro del objeto trabajador');
+        }
+      }
+      
+      // Procesar los documentos encontrados
+      if (data) {
+        console.log('📄 Procesando documentos encontrados:', data);
+        
+        const docsToLoad = {
+          licenciaConducir: data.licenciaConducir || { url: '', nombre: '', fecha: '', vencimiento: '' },
+          certificadoOperador: data.certificadoOperador || { url: '', nombre: '', fecha: '', vencimiento: '' },
+          certificados: []
+        };
+        
+        // Procesar certificados si existen
+        if (data.certificados && typeof data.certificados === 'object') {
+          docsToLoad.certificados = Object.entries(data.certificados).map(([key, cert]) => ({
+            firebaseKey: key,
+            ...cert
+          }));
+        }
+        
+        console.log('✅ Documentos procesados:', docsToLoad);
+        setDocumentos(docsToLoad);
+      } else {
+        console.log('⚠️ No se encontraron documentos en ninguna ruta');
+      }
+      
+      // Establecer listeners para cambios en tiempo real en AMBAS rutas
+      const listeners = [];
+      
+      // Listener para documentos/uid
+      const docsRef1 = ref(database, `documentos/${currentUser.uid}`);
+      const unsubscribe1 = onValue(docsRef1, (snapshot) => {
+        const updatedData = snapshot.val();
+        if (updatedData) {
+          console.log('🔄 Actualización detectada en documentos/uid:', updatedData);
+          
+          const docsToUpdate = {
+            licenciaConducir: updatedData.licenciaConducir || { url: '', nombre: '', fecha: '', vencimiento: '' },
+            certificadoOperador: updatedData.certificadoOperador || { url: '', nombre: '', fecha: '', vencimiento: '' },
+            certificados: []
+          };
+          
+          if (updatedData.certificados && typeof updatedData.certificados === 'object') {
+            docsToUpdate.certificados = Object.entries(updatedData.certificados).map(([key, cert]) => ({
+              firebaseKey: key,
+              ...cert
+            }));
+          }
+          
+          setDocumentos(docsToUpdate);
+        }
+      });
+      listeners.push(unsubscribe1);
+      
+      // Listener para trabajadores/uid/documentos
+      const docsRef2 = ref(database, `trabajadores/${currentUser.uid}/documentos`);
+      const unsubscribe2 = onValue(docsRef2, (snapshot) => {
+        const updatedData = snapshot.val();
+        if (updatedData) {
+          console.log('🔄 Actualización detectada en trabajadores/uid/documentos:', updatedData);
+          
+          const docsToUpdate = {
+            licenciaConducir: updatedData.licenciaConducir || { url: '', nombre: '', fecha: '', vencimiento: '' },
+            certificadoOperador: updatedData.certificadoOperador || { url: '', nombre: '', fecha: '', vencimiento: '' },
+            certificados: []
+          };
+          
+          if (updatedData.certificados && typeof updatedData.certificados === 'object') {
+            docsToUpdate.certificados = Object.entries(updatedData.certificados).map(([key, cert]) => ({
+              firebaseKey: key,
+              ...cert
+            }));
+          }
+          
+          setDocumentos(docsToUpdate);
+        }
+      });
+      listeners.push(unsubscribe2);
+      
+      setIsLoadingDocuments(false);
+      
+      // Retornar función para desuscribir todos los listeners
+      return () => {
+        listeners.forEach(unsubscribe => {
+          if (typeof unsubscribe === 'function') {
+            unsubscribe();
+          }
+        });
+      };
+      
+    } catch (error) {
+      console.error('❌ Error al cargar documentos:', error);
+      setIsLoadingDocuments(false);
+      showToast('❌ Error al cargar documentos', 'error');
+      return null;
+    }
   };
 
-  // Finalizar trabajo
-  const finishWork = () => {
-    const endTime = new Date().toISOString();
-    const finalLog = {
-      ...workLog,
-      endTime: endTime
+  // 6. FUNCIÓN PARA FORMATEAR TAMAÑO DE ARCHIVO
+  const formatFileSize = (bytes) => {
+    if (!bytes || bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  // 7. USE EFFECT CORREGIDO PARA CARGAR DOCUMENTOS AL INICIAR
+  useEffect(() => {
+    let unsubscribe = null;
+    let mounted = true;
+    
+    const loadDocuments = async () => {
+      if (currentUser && currentUser.uid && mounted) {
+        console.log('👤 Usuario detectado, cargando documentos:', currentUser.uid);
+        
+        // Esperar un poco más para asegurar que Firebase esté listo
+        // y que el trabajador se haya registrado completamente
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (mounted) {
+          unsubscribe = await cargarDocumentosDesdeFirebase();
+          
+          // Hacer una segunda verificación después de 2 segundos
+          // por si los datos se guardaron justo después
+          setTimeout(async () => {
+            if (mounted && (!documentos.licenciaConducir?.url && !documentos.certificadoOperador?.url)) {
+              console.log('🔄 Segunda verificación de documentos...');
+              await cargarDocumentosDesdeFirebase();
+            }
+          }, 2000);
+        }
+      }
     };
     
-    setWorkLog(finalLog);
-    setWorkStatus('completed');
-    setIsNavigating(false);
-    setShowWorkLog(true);
+    loadDocuments();
     
-    // Limpiar ruta
-    if (directionsRendererRef.current) {
-      directionsRendererRef.current.setDirections({ routes: [] });
+    return () => {
+      mounted = false;
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        console.log('🔚 Desuscribiendo listener de documentos');
+        unsubscribe();
+      }
+    };
+  }, [currentUser?.uid]);
+
+  // 8. USE EFFECT ADICIONAL PARA DEBUGGING
+  useEffect(() => {
+    if (showDocumentsModal && currentUser?.uid) {
+      console.log('📂 Modal abierto, estado actual de documentos:', documentos);
+      
+      // Verificar directamente en Firebase cuando se abre el modal
+      const checkFirebase = async () => {
+        console.log('🔍 Iniciando verificación completa de Firebase...');
+        
+        // Verificar múltiples rutas posibles
+        const rutas = [
+          `trabajadores/${currentUser.uid}/documentos`,
+          `documentos/${currentUser.uid}`,
+          `usuarios/${currentUser.uid}/documentos`,
+          `trabajadores/${currentUser.uid}`
+        ];
+        
+        for (const ruta of rutas) {
+          const testRef = ref(database, ruta);
+          const snapshot = await get(testRef);
+          const data = snapshot.val();
+          if (data) {
+            console.log(`✅ Datos encontrados en ${ruta}:`, data);
+          } else {
+            console.log(`❌ Sin datos en ${ruta}`);
+          }
+        }
+        
+        // Verificar la estructura completa de la base de datos
+        console.log('📊 Verificando estructura completa...');
+        const rootRef = ref(database);
+        const rootSnapshot = await get(rootRef);
+        const rootData = rootSnapshot.val();
+        console.log('🗂️ Estructura raíz de la base de datos:', Object.keys(rootData || {}));
+        
+        // Si hay trabajadores, verificar su estructura
+        if (rootData?.trabajadores?.[currentUser.uid]) {
+          console.log('👤 Estructura del trabajador actual:', 
+            Object.keys(rootData.trabajadores[currentUser.uid] || {}));
+        }
+      };
+      
+      checkFirebase();
+    }
+  }, [showDocumentsModal, currentUser?.uid]);
+
+  // ========== RESTO DE LAS FUNCIONES DEL COMPONENTE ==========
+  
+  // Función para navegar al dashboard
+  const navigateToDashboard = () => {
+    if (onViewChange) {
+      onViewChange('dashboard-trabajador');
+    }
+  };
+
+  // Función para mostrar notificaciones tipo toast
+  const showToast = (message, type = 'info', duration = 4000) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
     }
     
-    // Aquí podrías enviar los datos a Firebase
-    console.log('Registro de trabajo:', finalLog);
-  };
-
-  // Resetear para nuevo trabajo
-  const resetWork = () => {
-    setSelectedZona(null);
-    setWorkStatus('idle');
-    setWorkLog({
-      startTime: null,
-      arrivalTime: null,
-      endTime: null,
-      zona: null
-    });
-    setIsNavigating(false);
-    setDistance(null);
-    setDuration(null);
-    setShowWorkLog(false);
+    setToastNotification({ message, type });
     
-    if (zonaMarkerRef.current) {
-      zonaMarkerRef.current.setMap(null);
-      zonaMarkerRef.current = null;
-    }
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastNotification(null);
+    }, duration);
+  };
+
+  // Detectar si es móvil
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
     
-    if (directionsRendererRef.current) {
-      directionsRendererRef.current.setDirections({ routes: [] });
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Cargar zonas asignadas
+  useEffect(() => {
+    if (currentUser && currentUser.uid) {
+      const zonasRef = ref(database, 'zonas_asignadas');
+      const unsubZonas = onValue(zonasRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const zonasArray = Object.entries(data)
+            .filter(([id, zona]) => {
+              return zona.trabajadorAsignado === currentUser.uid && zona.estado !== 'completado';
+            })
+            .map(([id, zona]) => ({
+              id,
+              ...zona
+            }));
+          
+          setZonasAsignadas(zonasArray);
+        } else {
+          setZonasAsignadas([]);
+        }
+      });
+
+      return () => unsubZonas();
     }
-  };
+  }, [currentUser]);
 
-  // Formatear tiempo
-  const formatTime = (isoString) => {
-    if (!isoString) return '--:--';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('es-CL', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
-  };
+  // Registrar trabajador
+  useEffect(() => {
+    if (currentUser && currentUser.uid) {
+      console.log('🔄 Registrando trabajador en Firebase...');
+      trabajadoresService.createOrUpdateTrabajador(currentUser.uid, {
+        nombre: currentUser.name || currentUser.email || 'Trabajador',
+        email: currentUser.email,
+        telefono: currentUser.phone || '',
+        vehicleId: currentUser.vehicleId || null,
+        estado: 'disponible',
+        rol: 'trabajador',
+        ubicacion: null,
+        createdAt: new Date().toISOString(),
+        ultimaActualizacion: new Date().toISOString()
+      }).then(() => {
+        console.log('✅ Trabajador registrado exitosamente');
+      }).catch(error => {
+        console.error('❌ Error al registrar trabajador:', error);
+      });
+    }
+  }, [currentUser]);
 
-  // Calcular duración
-  const calculateDuration = (start, end) => {
-    if (!start || !end) return '--';
-    const diff = new Date(end) - new Date(start);
-    const hours = Math.floor(diff / 3600000);
-    const minutes = Math.floor((diff % 3600000) / 60000);
-    return `${hours}h ${minutes}m`;
-  };
+  // Limpiar al desmontar
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
 
-  if (error) {
+  // ========== MODAL DE DOCUMENTOS MEJORADO ==========
+  const DocumentosModal = () => {
+    if (!showDocumentsModal) return null;
+
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <h2>Error</h2>
-        <p>{error}</p>
-        <button onClick={() => window.location.reload()}>Reintentar</button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
-      {/* Encabezado */}
       <div style={{
-        position: 'absolute',
+        position: 'fixed',
         top: 0,
         left: 0,
         right: 0,
-        background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-        color: 'white',
-        padding: '15px 20px',
-        zIndex: 1000,
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+        bottom: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 3000,
+        padding: '20px'
       }}>
-        <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '600' }}>
-          👷‍♂️ Panel del Trabajador
-        </h1>
-        <p style={{ margin: '4px 0 0 0', fontSize: '14px', opacity: 0.95 }}>
-          GPS y Navegación a Zona de Trabajo
-        </p>
-      </div>
-
-      {/* Panel de control principal */}
-      <div style={{
-        position: 'absolute',
-        top: '70px',
-        left: '10px',
-        right: '10px',
-        background: 'white',
-        borderRadius: '12px',
-        padding: '15px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
-        zIndex: 1000,
-        maxWidth: '400px'
-      }}>
-        {/* Activación GPS */}
-        <div style={{ marginBottom: '15px' }}>
-          <button
-            onClick={toggleGPS}
-            style={{
-              width: '100%',
-              padding: '12px',
-              background: isTracking ? '#ef4444' : '#22c55e',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
-            {isTracking ? '📍 Desactivar GPS' : '📍 Activar GPS'}
-          </button>
-          {userPosition && (
-            <div style={{ 
-              marginTop: '8px', 
-              fontSize: '12px', 
-              color: '#666',
-              textAlign: 'center'
-            }}>
-              📍 Ubicación: {userPosition.lat.toFixed(4)}, {userPosition.lng.toFixed(4)}
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
+          maxWidth: '900px',
+          width: '100%',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          padding: '30px'
+        }}>
+          {/* Botón de DEBUG temporal - ELIMINAR EN PRODUCCIÓN */}
+          <div style={{
+            marginTop: '20px',
+            padding: '15px',
+            background: '#fee2e2',
+            border: '2px dashed #dc2626',
+            borderRadius: '8px'
+          }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#991b1b' }}>
+              🔧 Herramientas de Debug (Temporal)
+            </h4>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={async () => {
+                  console.log('=== INICIANDO DEBUG COMPLETO ===');
+                  
+                  // Buscar documentos en todas las rutas posibles
+                  const rutas = [
+                    'trabajadores',
+                    'documentos', 
+                    'usuarios',
+                    'uploads'
+                  ];
+                  
+                  for (const ruta of rutas) {
+                    const testRef = ref(database, ruta);
+                    const snapshot = await get(testRef);
+                    const data = snapshot.val();
+                    console.log(`📁 ${ruta}:`, data);
+                  }
+                  
+                  // Buscar específicamente los documentos del usuario
+                  const buscarDocumentos = async () => {
+                    const rootRef = ref(database);
+                    const snapshot = await get(rootRef);
+                    const allData = snapshot.val();
+                    
+                    console.log('🔍 Buscando documentos con URLs de Cloudinary...');
+                    
+                    const buscarEnObjeto = (obj, path = '') => {
+                      if (!obj) return;
+                      
+                      for (const [key, value] of Object.entries(obj)) {
+                        const currentPath = path ? `${path}/${key}` : key;
+                        
+                        if (typeof value === 'string' && value.includes('cloudinary')) {
+                          console.log(`✅ URL Cloudinary encontrada en ${currentPath}:`, value);
+                        }
+                        
+                        if (typeof value === 'object' && value !== null) {
+                          buscarEnObjeto(value, currentPath);
+                        }
+                      }
+                    };
+                    
+                    buscarEnObjeto(allData);
+                  };
+                  
+                  await buscarDocumentos();
+                  alert('Revisa la consola para ver los resultados del debug');
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔍 Buscar Documentos Perdidos
+              </button>
+              
+              <button
+                onClick={async () => {
+                  // Forzar recarga de documentos
+                  console.log('🔄 Forzando recarga...');
+                  await cargarDocumentosDesdeFirebase();
+                  alert('Documentos recargados - revisa la consola');
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#0891b2',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 Forzar Recarga
+              </button>
+              
+              <button
+                onClick={() => {
+                  console.log('📊 Estado actual:');
+                  console.log('- Usuario:', currentUser);
+                  console.log('- Documentos en estado:', documentos);
+                  console.log('- UID:', currentUser?.uid);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#7c3aed',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                📊 Ver Estado Actual
+              </button>
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Selector de zona */}
-        {isTracking && workStatus === 'idle' && (
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '8px', 
-              fontSize: '14px', 
-              fontWeight: '500' 
-            }}>
-              🏗️ Seleccionar Zona de Trabajo:
-            </label>
-            <select
-              value={selectedZona?.id || ''}
-              onChange={(e) => {
-                const zona = zonasDisponibles.find(z => z.id === parseInt(e.target.value));
-                if (zona) selectZona(zona);
-              }}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '25px'
+          }}>
+            <h2 style={{ margin: 0, color: '#1f2937', fontSize: '24px' }}>
+              📄 Mis Documentos
+            </h2>
+            <button
+              onClick={() => setShowDocumentsModal(false)}
               style={{
-                width: '100%',
-                padding: '10px',
+                padding: '8px',
+                background: '#6b7280',
+                color: 'white',
+                border: 'none',
                 borderRadius: '6px',
-                border: '1px solid #ddd',
-                fontSize: '14px'
+                cursor: 'pointer',
+                fontSize: '18px'
               }}
             >
-              <option value="">-- Seleccionar zona --</option>
-              {zonasDisponibles.map(zona => (
-                <option key={zona.id} value={zona.id}>
-                  {zona.nombre} - {zona.direccion}
-                </option>
-              ))}
-            </select>
+              ✖
+            </button>
           </div>
-        )}
 
-        {/* Información de zona seleccionada */}
-        {selectedZona && (
+          {/* Indicador de carga */}
+          {isLoadingDocuments && (
+            <div style={{
+              padding: '20px',
+              textAlign: 'center',
+              color: '#6b7280'
+            }}>
+              <div style={{ fontSize: '24px', marginBottom: '10px' }}>⏳</div>
+              <div>Cargando documentos...</div>
+            </div>
+          )}
+
+          {message.text && (
+            <div style={{
+              padding: '12px',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              background: message.type === 'success' ? '#dcfce7' : '#fee2e2',
+              border: `1px solid ${message.type === 'success' ? '#86efac' : '#fecaca'}`,
+              color: message.type === 'success' ? '#166534' : '#991b1b'
+            }}>
+              {message.text}
+            </div>
+          )}
+
           <div style={{
-            background: '#f0f9ff',
-            padding: '12px',
+            padding: '15px',
+            background: '#fef3c7',
+            border: '2px solid #f59e0b',
             borderRadius: '8px',
-            marginBottom: '15px',
-            border: '1px solid #bae6fd'
+            marginBottom: '20px'
           }}>
-            <h4 style={{ margin: '0 0 8px 0', color: '#0369a1', fontSize: '14px' }}>
-              Zona Seleccionada:
+            <h4 style={{ margin: '0 0 10px 0', color: '#92400e', fontSize: '16px' }}>
+              📸 IMPORTANTE: Solo se aceptan IMÁGENES
             </h4>
-            <div style={{ fontSize: '13px', color: '#333' }}>
-              <strong>{selectedZona.nombre}</strong><br/>
-              📍 {selectedZona.direccion}
-              {distance && duration && (
-                <div style={{ marginTop: '8px', color: '#666' }}>
-                  🚗 {distance} • ⏱️ {duration}
+            <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#78350f' }}>
+              Los archivos PDF no están soportados. Si tienes documentos en PDF:
+            </p>
+            <ol style={{ margin: '0', paddingLeft: '20px', fontSize: '14px', color: '#78350f' }}>
+              <li>📱 Toma una <strong>FOTO</strong> del documento con tu celular</li>
+              <li>💻 Haz una <strong>CAPTURA DE PANTALLA</strong> del PDF</li>
+              <li>🔄 Convierte el PDF a JPG en: <a href="https://www.ilovepdf.com/pdf_to_jpg" target="_blank" rel="noopener noreferrer" style={{ color: '#f59e0b' }}>iLovePDF.com</a></li>
+            </ol>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '20px'
+          }}>
+            {/* Licencia de Conducir */}
+            <div style={{
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px',
+              background: documentos.licenciaConducir?.url ? '#f0fdf4' : 'white'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px'
+              }}>
+                <h5 style={{ 
+                  margin: 0, 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  color: '#374151' 
+                }}>
+                  🚗 Licencia de Conducir
+                </h5>
+                {documentos.licenciaConducir?.url && (
+                  <span style={{
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    background: '#22c55e',
+                    color: 'white',
+                    borderRadius: '4px'
+                  }}>
+                    ✓ Cargado
+                  </span>
+                )}
+              </div>
+              
+              {documentos.licenciaConducir?.url ? (
+                <div>
+                  <div style={{
+                    padding: '8px',
+                    background: '#f9fafb',
+                    borderRadius: '6px',
+                    marginBottom: '8px',
+                    fontSize: '12px'
+                  }}>
+                    <div style={{ 
+                      fontWeight: '500', 
+                      color: '#1f2937',
+                      marginBottom: '3px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {documentos.licenciaConducir.nombre}
+                    </div>
+                    <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                      {documentos.licenciaConducir.fecha && 
+                        new Date(documentos.licenciaConducir.fecha).toLocaleDateString('es-CL')}
+                    </div>
+                    {documentos.licenciaConducir.tamaño > 0 && (
+                      <div style={{ color: '#9ca3af', fontSize: '10px', marginTop: '2px' }}>
+                        {formatFileSize(documentos.licenciaConducir.tamaño)}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <a 
+                      href={documentos.licenciaConducir.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        flex: 1,
+                        padding: '6px',
+                        background: '#3b82f6',
+                        color: 'white',
+                        textAlign: 'center',
+                        borderRadius: '6px',
+                        textDecoration: 'none',
+                        fontSize: '12px'
+                      }}
+                    >
+                      👁️ Ver
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteDocument('licenciaConducir')}
+                      style={{
+                        flex: 1,
+                        padding: '6px',
+                        background: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      🗑️ Eliminar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="file"
+                    id="licenciaConducir"
+                    accept=".jpg,.jpeg,.png"
+                    onChange={(e) => handleFileUpload(e.target.files[0], 'licenciaConducir')}
+                    style={{ display: 'none' }}
+                  />
+                  <label
+                    htmlFor="licenciaConducir"
+                    style={{
+                      display: 'block',
+                      padding: '20px 10px',
+                      background: '#f9fafb',
+                      border: '2px dashed #d1d5db',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#3b82f6';
+                      e.currentTarget.style.background = '#eff6ff';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#d1d5db';
+                      e.currentTarget.style.background = '#f9fafb';
+                    }}
+                  >
+                    {uploadProgress.licenciaConducir ? (
+                      <div>
+                        <div style={{ marginBottom: '5px' }}>
+                          Subiendo... {uploadProgress.licenciaConducir}%
+                        </div>
+                        <div style={{
+                          width: '100%',
+                          height: '4px',
+                          background: '#e5e7eb',
+                          borderRadius: '2px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${uploadProgress.licenciaConducir}%`,
+                            height: '100%',
+                            background: '#3b82f6',
+                            transition: 'width 0.3s'
+                          }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                        <div>Click para subir</div>
+                      </>
+                    )}
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Certificado de Operador */}
+            <div style={{
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '15px',
+              background: documentos.certificadoOperador?.url ? '#f0fdf4' : 'white'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px'
+              }}>
+                <h5 style={{ 
+                  margin: 0, 
+                  fontSize: '14px', 
+                  fontWeight: '600', 
+                  color: '#374151' 
+                }}>
+                  🏗️ Certificado de Operador
+                </h5>
+                {documentos.certificadoOperador?.url && (
+                  <span style={{
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    background: '#22c55e',
+                    color: 'white',
+                    borderRadius: '4px'
+                  }}>
+                    ✓ Cargado
+                  </span>
+                )}
+              </div>
+              
+              {documentos.certificadoOperador?.url ? (
+                <div>
+                  <div style={{
+                    padding: '8px',
+                    background: '#f9fafb',
+                    borderRadius: '6px',
+                    marginBottom: '8px',
+                    fontSize: '12px'
+                  }}>
+                    <div style={{ 
+                      fontWeight: '500', 
+                      color: '#1f2937',
+                      marginBottom: '3px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {documentos.certificadoOperador.nombre}
+                    </div>
+                    <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                      {documentos.certificadoOperador.fecha && 
+                        new Date(documentos.certificadoOperador.fecha).toLocaleDateString('es-CL')}
+                    </div>
+                    {documentos.certificadoOperador.tamaño > 0 && (
+                      <div style={{ color: '#9ca3af', fontSize: '10px', marginTop: '2px' }}>
+                        {formatFileSize(documentos.certificadoOperador.tamaño)}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <a 
+                      href={documentos.certificadoOperador.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        flex: 1,
+                        padding: '6px',
+                        background: '#3b82f6',
+                        color: 'white',
+                        textAlign: 'center',
+                        borderRadius: '6px',
+                        textDecoration: 'none',
+                        fontSize: '12px'
+                      }}
+                    >
+                      👁️ Ver
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteDocument('certificadoOperador')}
+                      style={{
+                        flex: 1,
+                        padding: '6px',
+                        background: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                    >
+                      🗑️ Eliminar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="file"
+                    id="certificadoOperador"
+                    accept=".jpg,.jpeg,.png"
+                    onChange={(e) => handleFileUpload(e.target.files[0], 'certificadoOperador')}
+                    style={{ display: 'none' }}
+                  />
+                  <label
+                    htmlFor="certificadoOperador"
+                    style={{
+                      display: 'block',
+                      padding: '20px 10px',
+                      background: '#f9fafb',
+                      border: '2px dashed #d1d5db',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#3b82f6';
+                      e.currentTarget.style.background = '#eff6ff';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#d1d5db';
+                      e.currentTarget.style.background = '#f9fafb';
+                    }}
+                  >
+                    <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                    <div>Click para subir</div>
+                  </label>
                 </div>
               )}
             </div>
           </div>
-        )}
 
-        {/* Botones de acción según estado */}
-        {workStatus === 'idle' && selectedZona && userPosition && (
-          <button
-            onClick={startNavigation}
-            style={{
-              width: '100%',
-              padding: '12px',
-              background: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '500',
-              cursor: 'pointer'
-            }}
-          >
-            🚗 Iniciar Recorrido
-          </button>
-        )}
-
-        {workStatus === 'traveling' && (
+          {/* Sección de certificados adicionales */}
           <div style={{
-            background: '#fef3c7',
-            padding: '12px',
-            borderRadius: '8px',
-            textAlign: 'center',
-            border: '1px solid #fde68a'
+            marginTop: '30px',
+            padding: '20px',
+            background: '#f9fafb',
+            borderRadius: '8px'
           }}>
-            <div style={{ fontSize: '16px', fontWeight: '500', color: '#92400e' }}>
-              🚗 En camino...
-            </div>
-            <div style={{ fontSize: '12px', marginTop: '4px', color: '#78350f' }}>
-              Hora de salida: {formatTime(workLog.startTime)}
-            </div>
-          </div>
-        )}
-
-        {workStatus === 'working' && (
-          <div>
-            <div style={{
-              background: '#dcfce7',
-              padding: '12px',
-              borderRadius: '8px',
-              marginBottom: '12px',
-              border: '1px solid #bbf7d0'
+            <h5 style={{ 
+              margin: '0 0 15px 0', 
+              fontSize: '16px', 
+              fontWeight: '600', 
+              color: '#374151' 
             }}>
-              <div style={{ fontSize: '16px', fontWeight: '500', color: '#14532d' }}>
-                ✅ En zona de trabajo
+              📚 Certificados de Capacitación
+            </h5>
+            
+            {documentos.certificados?.length > 0 && (
+              <div style={{ marginBottom: '15px' }}>
+                {documentos.certificados.map((cert, index) => (
+                  <div key={index} style={{
+                    padding: '10px',
+                    background: 'white',
+                    borderRadius: '6px',
+                    marginBottom: '8px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    border: '1px solid #e5e7eb'
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ 
+                        fontWeight: '500', 
+                        fontSize: '13px',
+                        color: '#1f2937',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        📜 {cert.nombre}
+                      </div>
+                      <div style={{ 
+                        color: '#6b7280', 
+                        fontSize: '11px',
+                        marginTop: '2px' 
+                      }}>
+                        {formatFileSize(cert.tamaño)} • {cert.fecha && new Date(cert.fecha).toLocaleDateString('es-CL')}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', marginLeft: '10px' }}>
+                      <a 
+                        href={cert.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          padding: '4px 8px',
+                          background: '#3b82f6',
+                          color: 'white',
+                          borderRadius: '4px',
+                          textDecoration: 'none',
+                          fontSize: '11px'
+                        }}
+                      >
+                        Ver
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteDocument('certificados', index)}
+                        style={{
+                          padding: '4px 8px',
+                          background: '#ef4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '11px'
+                        }}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#166534' }}>
-                Llegada: {formatTime(workLog.arrivalTime)}
-              </div>
-            </div>
-            <button
-              onClick={finishWork}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: '#dc2626',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '500',
-                cursor: 'pointer'
-              }}
-            >
-              🏁 Finalizar Trabajo
-            </button>
-          </div>
-        )}
-
-        {workStatus === 'completed' && (
-          <div>
-            <div style={{
-              background: '#e0e7ff',
-              padding: '12px',
-              borderRadius: '8px',
-              marginBottom: '12px',
-              border: '1px solid #c7d2fe'
-            }}>
-              <div style={{ fontSize: '16px', fontWeight: '500', color: '#312e81' }}>
-                ✅ Trabajo Completado
-              </div>
-              <button
-                onClick={() => setShowWorkLog(!showWorkLog)}
+            )}
+            
+            <div>
+              <input
+                type="file"
+                id="certificados"
+                accept=".jpg,.jpeg,.png"
+                onChange={(e) => handleFileUpload(e.target.files[0], 'certificados')}
+                style={{ display: 'none' }}
+                disabled={uploadingFile}
+              />
+              <label
+                htmlFor="certificados"
                 style={{
-                  marginTop: '8px',
-                  padding: '6px 12px',
-                  background: '#4f46e5',
+                  display: 'inline-block',
+                  padding: '10px 16px',
+                  background: uploadingFile ? '#9ca3af' : '#10b981',
                   color: 'white',
-                  border: 'none',
                   borderRadius: '6px',
-                  fontSize: '12px',
-                  cursor: 'pointer'
+                  cursor: uploadingFile ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
                 }}
               >
-                📋 Ver Resumen
-              </button>
+                {uploadingFile ? '⏳ Subiendo...' : '➕ Agregar Certificado'}
+              </label>
             </div>
-            <button
-              onClick={resetWork}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: '#22c55e',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '500',
-                cursor: 'pointer'
-              }}
-            >
-              🔄 Nuevo Trabajo
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // RESTO DEL CÓDIGO (Estilos y return) SIN CAMBIOS...
+  const styles = {
+    container: {
+      width: '100%',
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      position: 'relative',
+      overflow: 'hidden'
+    },
+    header: {
+      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+      color: 'white',
+      padding: '16px',
+      position: 'relative',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+    },
+    headerContent: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px'
+    },
+    userInfo: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    },
+    userName: {
+      fontSize: '20px',
+      fontWeight: '700',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    logoutBtn: {
+      padding: '8px 16px',
+      background: 'rgba(255,255,255,0.2)',
+      backdropFilter: 'blur(10px)',
+      color: 'white',
+      border: '1px solid rgba(255,255,255,0.3)',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontWeight: '600',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px'
+    },
+    buttonGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)',
+      gap: '12px'
+    },
+    actionBtn: {
+      padding: '16px',
+      borderRadius: '12px',
+      border: 'none',
+      cursor: 'pointer',
+      fontSize: '15px',
+      fontWeight: '600',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '8px',
+      transition: 'all 0.3s ease',
+      boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
+    },
+    mainContent: {
+      padding: '20px',
+      paddingTop: '30px'
+    },
+    dashboardGrid: {
+      display: 'grid',
+      gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(300px, 1fr))',
+      gap: '20px',
+      marginBottom: '30px'
+    },
+    dashboardCard: {
+      background: 'white',
+      borderRadius: '16px',
+      padding: '24px',
+      boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
+      transition: 'all 0.3s ease'
+    },
+    cardIcon: {
+      fontSize: '48px',
+      marginBottom: '12px'
+    },
+    cardTitle: {
+      fontSize: '18px',
+      fontWeight: '700',
+      color: '#1f2937',
+      marginBottom: '8px'
+    },
+    cardValue: {
+      fontSize: '32px',
+      fontWeight: '800',
+      color: '#3b82f6',
+      marginBottom: '4px'
+    },
+    cardSubtext: {
+      fontSize: '14px',
+      color: '#6b7280'
+    },
+    zonasSection: {
+      background: 'white',
+      borderRadius: '16px',
+      padding: '24px',
+      boxShadow: '0 10px 40px rgba(0,0,0,0.1)'
+    },
+    sectionTitle: {
+      fontSize: '20px',
+      fontWeight: '700',
+      color: '#1f2937',
+      marginBottom: '16px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    zonaCard: {
+      background: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
+      borderRadius: '12px',
+      padding: '16px',
+      marginBottom: '12px',
+      border: '2px solid #e5e7eb',
+      transition: 'all 0.3s ease'
+    },
+    emptyState: {
+      textAlign: 'center',
+      padding: '40px',
+      color: '#6b7280'
+    },
+    toast: {
+      position: 'fixed',
+      top: '20px',
+      right: '20px',
+      padding: '12px 20px',
+      borderRadius: '10px',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      zIndex: 2000,
+      animation: 'slideInRight 0.3s ease',
+      maxWidth: '350px',
+      backdropFilter: 'blur(10px)'
+    }
+  };
+
+  return (
+    <div style={styles.container}>
+      {/* Header Mejorado para Móvil */}
+      <div style={styles.header}>
+        <div style={styles.headerContent}>
+          <div style={styles.userInfo}>
+            <div style={styles.userName}>
+              <span>👷‍♂️</span>
+              <span>{currentUser.name || 'Trabajador'}</span>
+            </div>
+            <button onClick={onLogout} style={styles.logoutBtn}>
+              <span>🚪</span>
+              <span>Salir</span>
             </button>
           </div>
-        )}
+          
+          {/* Botones de Acción */}
+          <div style={styles.buttonGrid}>
+            <button
+              onClick={() => setShowDocumentsModal(true)}
+              style={{
+                ...styles.actionBtn,
+                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                color: 'white'
+              }}
+            >
+              <span style={{ fontSize: '24px' }}>📄</span>
+              <span>Mis Documentos</span>
+            </button>
+            
+            <button
+              onClick={() => setShowVehiclePanel(true)}
+              style={{
+                ...styles.actionBtn,
+                background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                color: 'white'
+              }}
+            >
+              <span style={{ fontSize: '24px' }}>🚛</span>
+              <span>Mi Vehículo</span>
+            </button>
+            
+            <button
+              onClick={navigateToDashboard}
+              style={{
+                ...styles.actionBtn,
+                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                color: 'white'
+              }}
+            >
+              <span style={{ fontSize: '24px' }}>📊</span>
+              <span>Dashboard</span>
+            </button>
+            
+            <button
+              onClick={() => showToast('🗺️ Función de mapa próximamente', 'info')}
+              style={{
+                ...styles.actionBtn,
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: 'white'
+              }}
+            >
+              <span style={{ fontSize: '24px' }}>🗺️</span>
+              <span>Mapa GPS</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Modal de resumen de trabajo */}
-      {showWorkLog && workLog.zona && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 2000,
-          padding: '20px'
-        }}>
-          <div style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '20px',
-            maxWidth: '400px',
-            width: '100%',
-            maxHeight: '80vh',
-            overflow: 'auto'
-          }}>
-            <h3 style={{ margin: '0 0 20px 0', color: '#1f2937' }}>
-              📋 Resumen del Trabajo
-            </h3>
-            
-            <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
-              <div style={{ marginBottom: '15px' }}>
-                <strong>Zona de trabajo:</strong><br/>
-                {workLog.zona.nombre}<br/>
-                📍 {workLog.zona.direccion}
-              </div>
-              
-              <div style={{
-                background: '#f8fafc',
-                padding: '12px',
-                borderRadius: '8px',
-                marginBottom: '15px'
-              }}>
-                <div style={{ marginBottom: '8px' }}>
-                  <strong>🚗 Hora de salida:</strong> {formatTime(workLog.startTime)}
-                </div>
-                <div style={{ marginBottom: '8px' }}>
-                  <strong>✅ Hora de llegada:</strong> {formatTime(workLog.arrivalTime)}
-                </div>
-                <div style={{ marginBottom: '8px' }}>
-                  <strong>🏁 Hora de término:</strong> {formatTime(workLog.endTime)}
-                </div>
-                <hr style={{ margin: '10px 0', border: 'none', borderTop: '1px solid #e5e7eb' }}/>
-                <div>
-                  <strong>⏱️ Tiempo de viaje:</strong> {calculateDuration(workLog.startTime, workLog.arrivalTime)}
-                </div>
-                <div>
-                  <strong>⏱️ Tiempo trabajado:</strong> {calculateDuration(workLog.arrivalTime, workLog.endTime)}
-                </div>
-                <div>
-                  <strong>⏱️ Tiempo total:</strong> {calculateDuration(workLog.startTime, workLog.endTime)}
-                </div>
-              </div>
-              
-              <button
-                onClick={() => setShowWorkLog(false)}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  background: '#6b7280',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cerrar
-              </button>
+      {/* Contenido Principal */}
+      <div style={styles.mainContent}>
+        {/* Dashboard Cards */}
+        <div style={styles.dashboardGrid}>
+          <div style={styles.dashboardCard}>
+            <div style={styles.cardIcon}>📍</div>
+            <div style={styles.cardTitle}>Estado GPS</div>
+            <div style={styles.cardValue}>
+              {gpsStatus === 'active' ? 'Activo' : 'Inactivo'}
+            </div>
+            <div style={styles.cardSubtext}>
+              {gpsStatus === 'active' ? '🟢 Transmitiendo ubicación' : '🔴 Sin transmisión'}
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Mapa */}
-      <div 
-        ref={mapRef}
-        style={{ 
-          width: '100%', 
-          height: '100%'
-        }} 
-      />
-      
-      {/* Indicador de carga */}
-      {!mapLoaded && (
+          <div style={styles.dashboardCard}>
+            <div style={styles.cardIcon}>🏗️</div>
+            <div style={styles.cardTitle}>Zonas Asignadas</div>
+            <div style={styles.cardValue}>{zonasAsignadas.length}</div>
+            <div style={styles.cardSubtext}>
+              {zonasAsignadas.filter(z => z.estado === 'pendiente').length} pendientes
+            </div>
+          </div>
+
+          <div style={styles.dashboardCard}>
+            <div style={styles.cardIcon}>✅</div>
+            <div style={styles.cardTitle}>Estado Actual</div>
+            <div style={styles.cardValue}>Disponible</div>
+            <div style={styles.cardSubtext}>Listo para trabajar</div>
+          </div>
+        </div>
+
+        {/* Sección de Zonas */}
+        <div style={styles.zonasSection}>
+          <h2 style={styles.sectionTitle}>
+            <span>🗺️</span>
+            <span>Mis Zonas de Trabajo</span>
+          </h2>
+          
+          {zonasAsignadas.length > 0 ? (
+            <div>
+              {zonasAsignadas.map(zona => (
+                <div key={zona.id} style={styles.zonaCard}>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: '600', color: '#1f2937' }}>
+                    📍 {zona.nombre}
+                  </h3>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#6b7280' }}>
+                    {zona.direccion}
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{
+                      padding: '4px 8px',
+                      background: zona.prioridad === 'alta' ? '#dc2626' : 
+                                zona.prioridad === 'media' ? '#f59e0b' : '#10b981',
+                      color: 'white',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      Prioridad: {zona.prioridad}
+                    </span>
+                    <span style={{
+                      padding: '4px 8px',
+                      background: zona.estado === 'pendiente' ? '#6b7280' :
+                                zona.estado === 'en_progreso' ? '#3b82f6' : '#10b981',
+                      color: 'white',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}>
+                      {zona.estado === 'pendiente' ? '⏳ Pendiente' :
+                       zona.estado === 'en_progreso' ? '🔧 En Progreso' : '✅ Completado'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={styles.emptyState}>
+              <div style={{ fontSize: '48px', marginBottom: '12px', opacity: 0.5 }}>📭</div>
+              <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '4px' }}>
+                No tienes zonas asignadas
+              </p>
+              <p style={{ fontSize: '14px' }}>
+                Cuando te asignen nuevas zonas aparecerán aquí
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Toast Notification */}
+      {toastNotification && (
         <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          textAlign: 'center',
-          zIndex: 1001
+          ...styles.toast,
+          background: toastNotification.type === 'success' ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' :
+                     toastNotification.type === 'error' ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' :
+                     toastNotification.type === 'warning' ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' :
+                     'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+          color: 'white'
         }}>
-          <div style={{
-            width: '50px',
-            height: '50px',
-            border: '4px solid #f3f3f3',
-            borderTop: '4px solid #22c55e',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite'
-          }}></div>
-          <p style={{ marginTop: '10px', color: '#666' }}>Cargando mapa...</p>
+          <span style={{ fontSize: '18px' }}>
+            {toastNotification.type === 'success' ? '✅' :
+             toastNotification.type === 'error' ? '❌' :
+             toastNotification.type === 'warning' ? '⚠️' : 'ℹ️'}
+          </span>
+          <span style={{ flex: 1, fontSize: '14px', fontWeight: '500' }}>
+            {toastNotification.message}
+          </span>
         </div>
       )}
 
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+      {/* Modal del panel de vehículo */}
+      {showVehiclePanel && (
+        <TrabajadorVehiclePanel 
+          currentUser={currentUser}
+          onClose={() => setShowVehiclePanel(false)}
+        />
+      )}
+
+      {/* Modal de Documentos */}
+      <DocumentosModal />
+
+      <style>{`
+        @keyframes slideInRight {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
         }
       `}</style>
     </div>
   );
 };
-
 export default SistemaTrabajadoresFirebase;
