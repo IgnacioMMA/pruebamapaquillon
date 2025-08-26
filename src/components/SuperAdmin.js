@@ -510,6 +510,14 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
     kilometraje: 0,
     capacidadCombustible: 0,
     tipoCombustible: 'gasolina',
+    tipoAceite: '', // NUEVO: Tipo de aceite del motor
+    fechaVencimientoExtintor: '', // NUEVO: Fecha de vencimiento del extintor
+    imagenVehiculo: '', // NUEVO: URL de la imagen del vehículo
+    seguroAdicional: '', // NUEVO: Información del seguro adicional/comercial
+    companiaSeguroAdicional: '', // NUEVO: Compañía del seguro adicional
+    numeroPolizaAdicional: '', // NUEVO: Número de póliza del seguro adicional
+    vigenciaSeguroAdicional: '', // NUEVO: Vigencia del seguro adicional
+    coberturaSeguroAdicional: '', // NUEVO: Tipo de cobertura
     ultimoMantenimiento: '',
     proximoMantenimiento: '',
     kilometrajeUltimoMantenimiento: 0,
@@ -527,15 +535,15 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
     // NUEVOS CAMPOS - DATOS GENERALES
     vin: '',
     proveedor: '',
-    modalidadAdquisicion: 'compra', // compra, leasing, arriendo, donacion
+    modalidadAdquisicion: 'compra',
     valorAdquisicion: 0,
     fechaAdquisicion: '',
 
     // ESPECIFICACIONES TÉCNICAS
     cilindrada: '',
     potencia: '',
-    transmision: 'manual', // manual, automatica
-    traccion: '4x2', // 4x2, 4x4, 6x4
+    transmision: 'manual',
+    traccion: '4x2',
     capacidadPasajeros: 0,
     capacidadCarga: 0,
     pesoBrutoVehicular: 0,
@@ -549,7 +557,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
     numeroPermisoCirculacion: '',
     vigenciaPermisoCirculacion: '',
     fechaRevisionGases: '',
-    resultadoRevisionTecnica: 'aprobado', // aprobado, rechazado, pendiente
+    resultadoRevisionTecnica: 'aprobado',
     vigenciaSOAP: '',
     numeroPolizaSOAP: '',
     seguroComplementario: false,
@@ -565,14 +573,13 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       padronMunicipal: { url: '', nombre: '', fecha: '' },
       facturaCompra: { url: '', nombre: '', fecha: '' },
       contratoLeasing: { url: '', nombre: '', fecha: '' },
-      otros: [] // Array para documentos adicionales
+      otros: []
     },
 
-
     // CONTROL DE OPERACIÓN
-    horasUso: 0, // Para maquinaria
+    horasUso: 0,
     promedioUsoMensual: 0,
-    consumoPromedio: 0, // L/100km o L/hr
+    consumoPromedio: 0,
     proveedorCombustible: '',
     tieneGPS: false,
     dispositivoGPS: '',
@@ -587,9 +594,9 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
     costoCombustibleMensual: 0,
     costoCombustibleAnual: 0,
     costoSeguroAnual: 0,
-    vidaUtilEstimada: 10, // años
+    vidaUtilEstimada: 10,
     fechaEstimadaReemplazo: '',
-    estadoPatrimonial: 'activo' // activo, baja, en_proceso_baja
+    estadoPatrimonial: 'activo'
   });
 
   // ========== ESTADOS PARA TIPOS DE VEHÍCULOS DINÁMICOS ==========
@@ -1708,7 +1715,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       licenciasRequeridas: vehicle.licenciasRequeridas || [],
 
       // ⚠️ IMPORTANTE: CARGAR DOCUMENTOS EXISTENTES
-      documentos: vehicle.documentos || {
+      documentos: {
         permisoCirculacion: { url: '', nombre: '', fecha: '' },
         revisionTecnica: { url: '', nombre: '', fecha: '' },
         certificadoGases: { url: '', nombre: '', fecha: '' },
@@ -1717,6 +1724,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         padronMunicipal: { url: '', nombre: '', fecha: '' },
         facturaCompra: { url: '', nombre: '', fecha: '' },
         contratoLeasing: { url: '', nombre: '', fecha: '' },
+        extintor: { url: '', nombre: '', fecha: '' }, // AGREGAR ESTA LÍNEA
         otros: []
       },
 
@@ -4906,6 +4914,30 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                 fontSize: '14px',
                                 fontWeight: '500'
                               }}>
+                                🛢️ Tipo de Aceite de Motor
+                              </label>
+                              <input
+                                type="text"
+                                value={vehicleFormData.tipoAceite}
+                                onChange={(e) => setVehicleFormData({ ...vehicleFormData, tipoAceite: e.target.value })}
+                                placeholder="Ej: 15W-40, 5W-30, SAE 40"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
                                 Tipo de Combustible
                               </label>
                               <select
@@ -5115,7 +5147,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                           borderBottom: '1px solid #e5e7eb'
                         }}>
                           <h3 style={{ margin: '0 0 15px 0', color: '#374151', fontSize: '16px' }}>
-                            📄 Documentación Legal (Chile)
+                            📄 Documentación Legal
                           </h3>
 
                           {/* PARTE 1: CAMPOS DE INFORMACIÓN */}
@@ -5140,6 +5172,48 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                 value={vehicleFormData.numeroPermisoCirculacion}
                                 onChange={(e) => setVehicleFormData({ ...vehicleFormData, numeroPermisoCirculacion: e.target.value })}
                                 placeholder="Número de permiso"
+                                style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '6px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{
+                                display: 'block',
+                                marginBottom: '6px',
+                                color: '#374151',
+                                fontSize: '14px',
+                                fontWeight: '500'
+                              }}>
+                                🧯 Fecha Vencimiento Extintor
+                              </label>
+                              <input
+                                type="date"
+                                value={vehicleFormData.fechaVencimientoExtintor}
+                                onChange={(e) => {
+                                  setVehicleFormData({ ...vehicleFormData, fechaVencimientoExtintor: e.target.value });
+
+                                  // Verificar si está próximo a vencer
+                                  const fechaVencimiento = new Date(e.target.value);
+                                  const hoy = new Date();
+                                  const diasRestantes = Math.ceil((fechaVencimiento - hoy) / (1000 * 60 * 60 * 24));
+
+                                  if (diasRestantes <= 30 && diasRestantes >= 0) {
+                                    setMessage({
+                                      type: 'warning',
+                                      text: `⚠️ El extintor vence en ${diasRestantes} días. Programar recarga.`
+                                    });
+                                  } else if (diasRestantes < 0) {
+                                    setMessage({
+                                      type: 'error',
+                                      text: '🚨 EXTINTOR VENCIDO - Requiere recarga inmediata'
+                                    });
+                                  }
+                                }}
                                 style={{
                                   width: '100%',
                                   padding: '10px',
@@ -5247,7 +5321,133 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                 <option value="true">Sí</option>
                               </select>
                             </div>
+                            {/* SECCIÓN DE SEGURO COMERCIAL/ADICIONAL */}
+                            {vehicleFormData.seguroComplementario && (
+                              <div style={{
+                                marginTop: '20px',
+                                padding: '20px',
+                                background: '#eff6ff',
+                                borderRadius: '8px',
+                                border: '1px solid #3b82f6'
+                              }}>
+                                <h4 style={{
+                                  margin: '0 0 15px 0',
+                                  color: '#1e40af',
+                                  fontSize: '15px',
+                                  fontWeight: '600'
+                                }}>
+                                  🛡️ Información del Seguro Comercial/Adicional
+                                </h4>
 
+                                <div style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '250px'}, 1fr))`,
+                                  gap: '15px'
+                                }}>
+                                  <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px' }}>
+                                      Compañía Aseguradora
+                                    </label>
+                                    <select
+                                      value={vehicleFormData.companiaSeguroAdicional}
+                                      onChange={(e) => setVehicleFormData({ ...vehicleFormData, companiaSeguroAdicional: e.target.value })}
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '6px'
+                                      }}
+                                    >
+                                      <option value="">-- Seleccionar --</option>
+                                      <option value="HDI Seguros">HDI Seguros</option>
+                                      <option value="MAPFRE">MAPFRE</option>
+                                      <option value="BCI Seguros">BCI Seguros</option>
+                                      <option value="Liberty Seguros">Liberty Seguros</option>
+                                      <option value="SURA">SURA</option>
+                                      <option value="Chilena Consolidada">Chilena Consolidada</option>
+                                      <option value="Consorcio">Consorcio</option>
+                                      <option value="Otra">Otra</option>
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px' }}>
+                                      N° de Póliza
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={vehicleFormData.numeroPolizaAdicional}
+                                      onChange={(e) => setVehicleFormData({ ...vehicleFormData, numeroPolizaAdicional: e.target.value })}
+                                      placeholder="Número de póliza"
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '6px'
+                                      }}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px' }}>
+                                      Vigencia del Seguro
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={vehicleFormData.vigenciaSeguroAdicional}
+                                      onChange={(e) => setVehicleFormData({ ...vehicleFormData, vigenciaSeguroAdicional: e.target.value })}
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '6px'
+                                      }}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px' }}>
+                                      Tipo de Cobertura
+                                    </label>
+                                    <select
+                                      value={vehicleFormData.coberturaSeguroAdicional}
+                                      onChange={(e) => setVehicleFormData({ ...vehicleFormData, coberturaSeguroAdicional: e.target.value })}
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '6px'
+                                      }}
+                                    >
+                                      <option value="">-- Seleccionar --</option>
+                                      <option value="basica">Básica (Daños a terceros)</option>
+                                      <option value="completa">Completa (Todo riesgo)</option>
+                                      <option value="parcial">Parcial (Robo + Daños a terceros)</option>
+                                      <option value="personalizada">Personalizada</option>
+                                    </select>
+                                  </div>
+
+                                  <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px' }}>
+                                      Detalles de Cobertura
+                                    </label>
+                                    <textarea
+                                      value={vehicleFormData.seguroAdicional}
+                                      onChange={(e) => setVehicleFormData({ ...vehicleFormData, seguroAdicional: e.target.value })}
+                                      placeholder="Ej: Incluye responsabilidad civil, robo, daños propios, asistencia en ruta, etc."
+                                      rows={3}
+                                      style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '6px',
+                                        resize: 'none'
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                             <div>
                               <label style={{
                                 display: 'block',
@@ -5473,6 +5673,164 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                         <>
                                           <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
                                           <div>Click para subir</div>
+                                        </>
+                                      )}
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Certificado/Foto del Extintor */}
+                              <div style={{
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '15px',
+                                background: vehicleFormData.documentos?.extintor?.url ? '#f0fdf4' : 'white'
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '10px'
+                                }}>
+                                  <h5 style={{
+                                    margin: 0,
+                                    fontSize: '13px',
+                                    fontWeight: '600',
+                                    color: '#374151'
+                                  }}>
+                                    🧯 Certificado de Extintor
+                                  </h5>
+                                  {vehicleFormData.documentos?.extintor?.url && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      background: '#22c55e',
+                                      color: 'white',
+                                      borderRadius: '4px'
+                                    }}>
+                                      ✓ Cargado
+                                    </span>
+                                  )}
+                                </div>
+
+                                {vehicleFormData.documentos?.extintor?.url ? (
+                                  <div>
+                                    <div style={{
+                                      padding: '8px',
+                                      background: '#f9fafb',
+                                      borderRadius: '6px',
+                                      marginBottom: '8px',
+                                      fontSize: '12px'
+                                    }}>
+                                      <div style={{
+                                        fontWeight: '500',
+                                        color: '#1f2937',
+                                        marginBottom: '3px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {vehicleFormData.documentos.extintor.nombre}
+                                      </div>
+                                      <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                                        {new Date(vehicleFormData.documentos.extintor.fecha).toLocaleDateString('es-CL')}
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                      <a href={vehicleFormData.documentos.extintor.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#3b82f6',
+                                          color: 'white',
+                                          textAlign: 'center',
+                                          borderRadius: '6px',
+                                          textDecoration: 'none',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        👁️ Ver
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteDocument('extintor')}
+                                        style={{
+                                          flex: 1,
+                                          padding: '6px',
+                                          background: '#ef4444',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '6px',
+                                          cursor: 'pointer',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        🗑️ Eliminar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <input
+                                      type="file"
+                                      id="extintor"
+                                      accept=".jpg,.jpeg,.png"
+                                      onChange={(e) => handleFileUpload(e.target.files[0], 'extintor', editingVehicle?.id)}
+                                      style={{ display: 'none' }}
+                                    />
+                                    <label
+                                      htmlFor="extintor"
+                                      style={{
+                                        display: 'block',
+                                        padding: '20px 10px',
+                                        background: '#f9fafb',
+                                        border: '2px dashed #d1d5db',
+                                        borderRadius: '6px',
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        fontSize: '12px',
+                                        color: '#6b7280',
+                                        transition: 'all 0.2s'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = '#3b82f6';
+                                        e.currentTarget.style.background = '#eff6ff';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = '#d1d5db';
+                                        e.currentTarget.style.background = '#f9fafb';
+                                      }}
+                                    >
+                                      {uploadProgress.extintor ? (
+                                        <div>
+                                          <div style={{ marginBottom: '5px' }}>
+                                            Subiendo... {uploadProgress.extintor}%
+                                          </div>
+                                          <div style={{
+                                            width: '100%',
+                                            height: '4px',
+                                            background: '#e5e7eb',
+                                            borderRadius: '2px',
+                                            overflow: 'hidden'
+                                          }}>
+                                            <div style={{
+                                              width: `${uploadProgress.extintor}%`,
+                                              height: '100%',
+                                              background: '#3b82f6',
+                                              transition: 'width 0.3s'
+                                            }} />
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                          <div>Click para subir</div>
+                                          <div style={{ fontSize: '11px', marginTop: '5px', color: '#9ca3af' }}>
+                                            Foto del extintor y etiqueta de vencimiento
+                                          </div>
                                         </>
                                       )}
                                     </label>
