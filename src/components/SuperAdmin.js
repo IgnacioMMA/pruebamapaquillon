@@ -7,6 +7,8 @@ import { auth, firestore, database, storage, firebaseConfig } from '../config/fi
 import { doc, setDoc, collection, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
 import WelcomeScreen from './WelcomeScreen';
 import NotificationSystem from './NotificationSystem';
+import VehicleMaintenanceModule from './VehicleMaintenanceModule';
+
 import {
   ref as databaseRef,     // Alias para database ref
   set as databaseSet,     // Alias para database set
@@ -1951,8 +1953,16 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       });
     }
   };
+  const getMaintenanceAlerts = () => {
+    const hoy = new Date();
+    return vehiculos.filter(v => {
+      if (!v.proximoMantenimiento) return false;
+      const proxima = new Date(v.proximoMantenimiento);
+      const dias = Math.ceil((proxima - hoy) / (1000 * 60 * 60 * 24));
+      return dias <= 7; // Alertas para mantenimientos en 7 días o menos
+    }).length;
+  };
 
-  // Busca la función menuItems (alrededor de la línea 1760)
   const menuItems = useMemo(() => [
     {
       id: 'principal',
@@ -1963,7 +1973,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
           id: 'inicio',
           icon: '🏛️',
           title: 'Inicio',
-          tab: 'inicio' // NUEVO
+          tab: 'inicio'
         },
         { id: 'fleet', icon: '🚛', title: 'Panel Flota', view: 'fleet' }
       ]
@@ -1988,6 +1998,14 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
           badge: getVehicleStats().total
         },
         {
+          id: 'maintenance',  // NUEVO
+          icon: '🔧',
+          title: 'Mantenimientos',
+          tab: 'maintenance',
+          badge: getMaintenanceAlerts(),
+          badgeType: getMaintenanceAlerts() > 0 ? 'alert' : null
+        },
+        {
           id: 'solicitudes',
           icon: '📋',
           title: 'Solicitudes',
@@ -1997,7 +2015,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         }
       ]
     }
-  ], [getUserStats().total, getVehicleStats().total, solicitudes]);
+  ], [getUserStats().total, getVehicleStats().total, solicitudes, vehiculos]); // Agregar vehiculos a las dependencias
 
   // ========== RENDER PRINCIPAL ==========
   return (
@@ -7174,6 +7192,13 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                   </div>
                 </>
               )}
+              {activeTab === 'maintenance' && (
+                <VehicleMaintenanceModule
+                  vehiculos={vehiculos}
+                  currentUser={currentUser}
+                  isMobile={isMobile}
+                />
+              )}
 
               {/* CONTENIDO DE SOLICITUDES */}
               {activeTab === 'solicitudes' && (
@@ -7199,6 +7224,8 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                   </div>
                 </>
               )}
+              {/* CONTENIDO DE MANTENIMIENTO */}
+
             </>
           )}
         </div>
