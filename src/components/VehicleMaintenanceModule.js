@@ -1,7 +1,9 @@
 // src/components/VehicleMaintenanceModule.js
 
 import React, { useState, useEffect, useCallback } from 'react';
+import ServiceCatalogManager from './ServiceCatalogManager';
 import { pdfExportService } from '../services/pdfExportService';
+import ServiceCatalogSelector from './ServiceCatalogSelector';
 import {
     database,
     storage,
@@ -13,7 +15,9 @@ import {
     update,
     onValue,
     off,
-    set as databaseSet
+    set as databaseSet,
+    get,
+    remove
 } from 'firebase/database';
 import {
     ref as storageRef,
@@ -42,6 +46,24 @@ const VehicleMaintenanceModule = ({
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
 
+
+    // Estados para gestión de elementos dinámicos
+    const [inspectionItems, setInspectionItems] = useState([]);
+    const [workItems, setWorkItems] = useState([]);
+    const [showElementsManager, setShowElementsManager] = useState(false);
+    const [activeTab, setActiveTab] = useState('inspection'); // 'inspection' o 'works'
+    const [elementFilter, setElementFilter] = useState('');
+    const [showNewElementForm, setShowNewElementForm] = useState(false);
+
+    // Estado para nuevo elemento
+    const [newElement, setNewElement] = useState({
+        code: '',
+        name: '',
+        detail: '',
+        type: 'inspection', // 'inspection' o 'work'
+        requiresObservation: true
+    });
+
     // Estado del formulario de mantenimiento
     const [maintenanceForm, setMaintenanceForm] = useState({
         fecha: new Date().toISOString().split('T')[0],
@@ -49,59 +71,170 @@ const VehicleMaintenanceModule = ({
         tipoMantenimiento: 'preventivo',
         kilometraje: '',
         horasUso: '',
-
-        // Checklist de inspección
-        gata: 'no_aplica',
-        gataObservaciones: '',
-
-        chalecoReflectante: 'no_aplica',
-        chalecoObservaciones: '',
-
-        llaveRepuesto: 'no_aplica',
-        llaveObservaciones: '',
-
-        cinturon: 'no_aplica',
-        cinturonObservaciones: '',
-
-        parabrisas: 'bueno',
-        parabrisasObservaciones: '',
-
-        lucesFreno: 'bueno',
-        lucesObservaciones: '',
-
-        lucesDelanteras: 'bueno',
-        lucesDObservaciones: '',
-
-        // Mantenimiento realizado
-        cambioAceite: false,
-        filtroAire: false,
-        filtroAceite: false,
-        filtroCombustible: false,
-        revisionFrenos: false,
-        revisionNeumaticos: false,
-        revisionSuspension: false,
-        revisionDireccion: false,
-        revisionBateria: false,
-        revisionLuces: false,
-        nivelLiquidos: false,
-
-        // Observaciones generales
         observacionesGenerales: '',
         proximoMantenimientoKm: '',
         proximoMantenimientoFecha: '',
-
-        // Información del responsable
         realizadoPor: currentUser.name || currentUser.email,
         tallerResponsable: '',
         costoMantenimiento: 0,
+        fotos: [],
+        inspectionData: {}, // Datos dinámicos de inspección
+        workData: {}, // Datos dinámicos de trabajos
+        serviciosCatalogo: []
 
-        // Fotos del mantenimiento
-        fotos: []
     });
+
+    // Cargar elementos de configuración al iniciar
+    useEffect(() => {
+        loadConfigElements();
+    }, []);
+
+    // Cargar elementos de inspección y trabajo desde Firebase
+    const loadConfigElements = async () => {
+        try {
+            // Cargar elementos de inspección
+            const inspectionRef = databaseRef(database, 'configuracion/elementosInspeccion');
+            onValue(inspectionRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const items = Object.entries(data).map(([id, item]) => ({
+                        id,
+                        ...item
+                    }));
+                    setInspectionItems(items);
+                }
+            });
+
+            // Cargar elementos de trabajo
+            const workRef = databaseRef(database, 'configuracion/elementosTrabajo');
+            onValue(workRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const items = Object.entries(data).map(([id, item]) => ({
+                        id,
+                        ...item
+                    }));
+                    setWorkItems(items);
+                }
+            });
+        } catch (error) {
+            console.error('Error al cargar elementos de configuración:', error);
+        }
+    };
+
+    // Guardar nuevo elemento
+    const handleSaveNewElement = async () => {
+        if (!newElement.code || !newElement.name) {
+            setMessage({
+                type: 'error',
+                text: '❌ El código y nombre son obligatorios'
+            });
+            return;
+        }
+
+        try {
+            const elementData = {
+                code: newElement.code.toUpperCase(),
+                name: newElement.name,
+                detail: newElement.detail,
+                requiresObservation: newElement.type === 'inspection' ? newElement.requiresObservation : false,
+                createdBy: currentUser.uid,
+                createdAt: new Date().toISOString()
+            };
+
+            const refPath = newElement.type === 'inspection'
+                ? 'configuracion/elementosInspeccion'
+                : 'configuracion/elementosTrabajo';
+
+            const elementRef = databaseRef(database, refPath);
+            await push(elementRef, elementData);
+
+            setMessage({
+                type: 'success',
+                text: `✅ Elemento ${newElement.name} creado exitosamente`
+            });
+
+            // Resetear formulario
+            setNewElement({
+                code: '',
+                name: '',
+                detail: '',
+                type: activeTab === 'inspection' ? 'inspection' : 'work',
+                requiresObservation: true
+            });
+            setShowNewElementForm(false);
+        } catch (error) {
+            console.error('Error al guardar elemento:', error);
+            setMessage({
+                type: 'error',
+                text: '❌ Error al guardar el elemento'
+            });
+        }
+    };
+
+    // Eliminar elemento
+    const handleDeleteElement = async (elementId, type) => {
+        if (!window.confirm('¿Está seguro de eliminar este elemento?')) {
+            return;
+        }
+
+        try {
+            const refPath = type === 'inspection'
+                ? `configuracion/elementosInspeccion/${elementId}`
+                : `configuracion/elementosTrabajo/${elementId}`;
+
+            await remove(databaseRef(database, refPath));
+
+            setMessage({
+                type: 'success',
+                text: '✅ Elemento eliminado exitosamente'
+            });
+        } catch (error) {
+            console.error('Error al eliminar elemento:', error);
+            setMessage({
+                type: 'error',
+                text: '❌ Error al eliminar el elemento'
+            });
+        }
+    };
+
+    // Filtrar elementos
+    const getFilteredElements = () => {
+        const elements = activeTab === 'inspection' ? inspectionItems : workItems;
+
+        if (!elementFilter) return elements;
+
+        return elements.filter(item =>
+            item.name.toLowerCase().includes(elementFilter.toLowerCase()) ||
+            item.code.toLowerCase().includes(elementFilter.toLowerCase()) ||
+            (item.detail && item.detail.toLowerCase().includes(elementFilter.toLowerCase()))
+        );
+    };
+
+    // Actualizar datos del formulario cuando se marcan elementos
+    const handleInspectionChange = (itemCode, field, value) => {
+        setMaintenanceForm(prev => ({
+            ...prev,
+            inspectionData: {
+                ...prev.inspectionData,
+                [`${itemCode}_${field}`]: value
+            }
+        }));
+    };
+
+    const handleWorkChange = (itemCode, checked) => {
+        setMaintenanceForm(prev => ({
+            ...prev,
+            workData: {
+                ...prev.workData,
+                [itemCode]: checked
+            }
+        }));
+    };
+
     useEffect(() => {
         let filtered = [...maintenanceHistory];
 
-        // Filtro por patente
         if (searchPatente) {
             filtered = filtered.filter(m =>
                 m.vehiculoPatente?.toLowerCase().includes(searchPatente.toLowerCase()) ||
@@ -109,14 +242,12 @@ const VehicleMaintenanceModule = ({
             );
         }
 
-        // Filtro por fecha desde
         if (searchFechaDesde) {
             filtered = filtered.filter(m =>
                 new Date(m.fecha) >= new Date(searchFechaDesde)
             );
         }
 
-        // Filtro por fecha hasta
         if (searchFechaHasta) {
             filtered = filtered.filter(m =>
                 new Date(m.fecha) <= new Date(searchFechaHasta)
@@ -126,21 +257,15 @@ const VehicleMaintenanceModule = ({
         setFilteredHistory(filtered);
     }, [maintenanceHistory, searchPatente, searchFechaDesde, searchFechaHasta, selectedVehicle]);
 
-
-    // Cargar historial de mantenimiento cuando se selecciona un vehículo
-    // Cargar historial de mantenimiento cuando se selecciona un vehículo
     useEffect(() => {
         if (selectedVehicle) {
             loadMaintenanceHistory(selectedVehicle.id);
-            // Resetear filtros cuando se selecciona un nuevo vehículo
             setSearchPatente('');
             setSearchFechaDesde('');
             setSearchFechaHasta('');
         }
     }, [selectedVehicle]);
 
-    // Función para cargar historial
-    // Función para cargar historial
     const loadMaintenanceHistory = (vehicleId) => {
         const historyRef = databaseRef(database, `mantenimientos/${vehicleId}`);
 
@@ -154,17 +279,16 @@ const VehicleMaintenanceModule = ({
                     }))
                     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
                 setMaintenanceHistory(historyArray);
-                setFilteredHistory(historyArray); // AGREGAR ESTA LÍNEA
+                setFilteredHistory(historyArray);
             } else {
                 setMaintenanceHistory([]);
-                setFilteredHistory([]); // AGREGAR ESTA LÍNEA
+                setFilteredHistory([]);
             }
         });
 
         return () => off(historyRef);
     };
 
-    // Función para subir fotos a Cloudinary
     const handlePhotoUpload = async (files) => {
         if (!files || files.length === 0) return;
 
@@ -175,7 +299,6 @@ const VehicleMaintenanceModule = ({
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
 
-                // Validar tipo de archivo
                 if (!file.type.startsWith('image/')) {
                     setMessage({
                         type: 'error',
@@ -184,7 +307,6 @@ const VehicleMaintenanceModule = ({
                     continue;
                 }
 
-                // Validar tamaño
                 if (file.size > 10 * 1024 * 1024) {
                     setMessage({
                         type: 'error',
@@ -225,7 +347,6 @@ const VehicleMaintenanceModule = ({
                 });
             }
 
-            // Actualizar el estado con las fotos subidas
             setMaintenanceForm(prev => ({
                 ...prev,
                 fotos: [...prev.fotos, ...uploadedPhotos]
@@ -248,7 +369,6 @@ const VehicleMaintenanceModule = ({
         }
     };
 
-    // Función para eliminar foto
     const handleDeletePhoto = (index) => {
         setMaintenanceForm(prev => ({
             ...prev,
@@ -256,31 +376,30 @@ const VehicleMaintenanceModule = ({
         }));
     };
 
-    // Función para guardar mantenimiento
     const handleSaveMaintenance = async (e) => {
         e.preventDefault();
         setLoading(true);
 
         try {
-            // Combinar fecha y hora
             const fechaHoraCompleta = `${maintenanceForm.fecha}T${maintenanceForm.hora}:00`;
 
             const maintenanceData = {
                 ...maintenanceForm,
-                fechaCompleta: fechaHoraCompleta, // Agregar fecha y hora combinadas
+                fechaCompleta: fechaHoraCompleta,
                 vehiculoId: selectedVehicle.id,
                 vehiculoNombre: selectedVehicle.nombre,
-                vehiculoPatente: selectedVehicle.patente, // AGREGAR PATENTE
+                vehiculoPatente: selectedVehicle.patente,
                 fechaRegistro: new Date().toISOString(),
                 registradoPor: currentUser.uid,
-                registradoPorNombre: currentUser.name || currentUser.email
+                registradoPorNombre: currentUser.name || currentUser.email,
+                serviciosCatalogo: maintenanceForm.serviciosCatalogo || [], // <-- INCLUIR ESTO
+                costoTotal: maintenanceForm.costoMantenimiento // <-- INCLUIR ESTO
             };
-            // Guardar en la base de datos
+
             const maintenanceRef = databaseRef(database, `mantenimientos/${selectedVehicle.id}`);
             const newMaintenanceRef = push(maintenanceRef);
             await databaseSet(newMaintenanceRef, maintenanceData);
 
-            // Actualizar el vehículo con la información del último mantenimiento
             const vehicleRef = databaseRef(database, `vehiculos/${selectedVehicle.id}`);
             await update(vehicleRef, {
                 ultimoMantenimiento: maintenanceForm.fecha,
@@ -295,7 +414,6 @@ const VehicleMaintenanceModule = ({
                 text: '✅ Mantenimiento registrado exitosamente'
             });
 
-            // Resetear formulario
             resetForm();
             setShowMaintenanceForm(false);
 
@@ -310,7 +428,6 @@ const VehicleMaintenanceModule = ({
         }
     };
 
-    // Función para resetear el formulario
     const resetForm = () => {
         setMaintenanceForm({
             fecha: new Date().toISOString().split('T')[0],
@@ -318,43 +435,18 @@ const VehicleMaintenanceModule = ({
             tipoMantenimiento: 'preventivo',
             kilometraje: '',
             horasUso: '',
-            gata: 'no_aplica',
-            gataObservaciones: '',
-            chalecoReflectante: 'no_aplica',
-            chalecoObservaciones: '',
-            llaveRepuesto: 'no_aplica',
-            llaveObservaciones: '',
-            cinturon: 'no_aplica',
-            cinturonObservaciones: '',
-            parabrisas: 'bueno',
-            parabrisasObservaciones: '',
-            lucesFreno: 'bueno',
-            lucesObservaciones: '',
-            lucesDelanteras: 'bueno',
-            lucesDObservaciones: '',
-            cambioAceite: false,
-            filtroAire: false,
-            filtroAceite: false,
-            filtroCombustible: false,
-            revisionFrenos: false,
-            revisionNeumaticos: false,
-            revisionSuspension: false,
-            revisionDireccion: false,
-            revisionBateria: false,
-            revisionLuces: false,
-            nivelLiquidos: false,
             observacionesGenerales: '',
             proximoMantenimientoKm: '',
             proximoMantenimientoFecha: '',
             realizadoPor: currentUser.name || currentUser.email,
             tallerResponsable: '',
             costoMantenimiento: 0,
-            fotos: []
+            fotos: [],
+            inspectionData: {},
+            workData: {}
         });
     };
 
-    // Función para exportar historial a PDF
-    // Luego modifica la función handleExportPDF:
     const handleExportPDF = () => {
         if (!selectedVehicle) {
             setMessage({
@@ -411,23 +503,6 @@ const VehicleMaintenanceModule = ({
                 }}>
                     🔧 Módulo de Mantenimiento Vehicular
                 </h1>
-
-                {selectedVehicle && (
-                    <button
-                        onClick={() => setSelectedVehicle(null)}
-                        style={{
-                            padding: '10px 20px',
-                            background: '#6b7280',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            fontSize: '14px',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        ← Volver a lista
-                    </button>
-                )}
             </div>
 
             {/* Mensajes */}
@@ -448,23 +523,41 @@ const VehicleMaintenanceModule = ({
                 </div>
             )}
 
+            {/* Modal de Gestión de Elementos */}
+            {showElementsManager && (
+                <ElementsManagerModal
+                    show={showElementsManager}
+                    onClose={() => setShowElementsManager(false)}
+                    inspectionItems={inspectionItems}
+                    workItems={workItems}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    elementFilter={elementFilter}
+                    setElementFilter={setElementFilter}
+                    showNewElementForm={showNewElementForm}
+                    setShowNewElementForm={setShowNewElementForm}
+                    newElement={newElement}
+                    setNewElement={setNewElement}
+                    handleSaveNewElement={handleSaveNewElement}
+                    handleDeleteElement={handleDeleteElement}
+                    getFilteredElements={getFilteredElements}
+                    isMobile={isMobile}
+                />
+            )}
+
             {!selectedVehicle ? (
-                // Lista de vehículos
                 <VehicleSelectionGrid
                     vehiculos={vehiculos}
                     onSelectVehicle={setSelectedVehicle}
                     isMobile={isMobile}
                 />
             ) : (
-                // Vista de mantenimiento del vehículo seleccionado
                 <>
-                    {/* Información del vehículo */}
                     <VehicleInfoCard
                         vehicle={selectedVehicle}
                         isMobile={isMobile}
                     />
 
-                    {/* Botones de acción */}
                     <div style={{
                         display: 'flex',
                         gap: '10px',
@@ -504,9 +597,34 @@ const VehicleMaintenanceModule = ({
                         >
                             📄 Exportar Historial PDF
                         </button>
+
+                    </div>
+                    <div style={{
+                        display: 'flex',
+                        gap: '10px',
+                        marginBottom: '20px',
+                        flexWrap: 'wrap'
+                    }}>
+
+                        {/* AGREGAR ESTE BOTÓN */}
+                        <button
+                            onClick={() => setShowElementsManager(true)}
+                            style={{
+                                padding: '12px 24px',
+                                background: 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '16px',
+                                fontWeight: '500',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                            }}
+                        >
+                            ⚙️ Gestión de Elementos
+                        </button>
                     </div>
 
-                    {/* Formulario de mantenimiento */}
                     {showMaintenanceForm && (
                         <MaintenanceForm
                             form={maintenanceForm}
@@ -519,12 +637,14 @@ const VehicleMaintenanceModule = ({
                             loading={loading}
                             isMobile={isMobile}
                             vehicle={selectedVehicle}
-                            currentUser={currentUser}  // AGREGAR ESTA LÍNEA
-
+                            currentUser={currentUser}
+                            inspectionItems={inspectionItems}
+                            workItems={workItems}
+                            handleInspectionChange={handleInspectionChange}
+                            handleWorkChange={handleWorkChange}
                         />
                     )}
 
-                    {/* Filtros de búsqueda - AGREGAR ANTES DEL HISTORIAL */}
                     {maintenanceHistory.length > 0 && (
                         <div style={{
                             background: 'white',
@@ -642,7 +762,6 @@ const VehicleMaintenanceModule = ({
                                 </div>
                             </div>
 
-                            {/* Mostrar resultados */}
                             <div style={{
                                 marginTop: '15px',
                                 padding: '10px',
@@ -656,12 +775,13 @@ const VehicleMaintenanceModule = ({
                         </div>
                     )}
 
-                    {/* Historial de mantenimientos */}
                     <MaintenanceHistory
                         history={filteredHistory}
                         isMobile={isMobile}
                         vehicle={selectedVehicle}
                         currentUser={currentUser}
+                        inspectionItems={inspectionItems}
+                        workItems={workItems}
                     />
                 </>
             )}
@@ -669,9 +789,582 @@ const VehicleMaintenanceModule = ({
     );
 };
 
-// Componente para selección de vehículo
+// Modal de Gestión de Elementos
+const ElementsManagerModal = ({
+    show,
+    onClose,
+    inspectionItems,
+    workItems,
+    activeTab,
+    setActiveTab,
+    elementFilter,
+    setElementFilter,
+    showNewElementForm,
+    setShowNewElementForm,
+    newElement,
+    setNewElement,
+    handleSaveNewElement,
+    handleDeleteElement,
+    getFilteredElements,
+    isMobile
+}) => {
+    const [editingElement, setEditingElement] = useState(null);
+    const [editForm, setEditForm] = useState({
+        code: '',
+        name: '',
+        detail: '',
+        requiresObservation: false
+    });
+    if (!show) return null;
+
+    // Función para iniciar edición
+    const startEditing = (item) => {
+        setEditingElement(item.id);
+        setEditForm({
+            code: item.code,
+            name: item.name,
+            detail: item.detail || '',
+            requiresObservation: item.requiresObservation || false
+        });
+        setShowNewElementForm(false);
+    };
+    const handleSaveEdit = async (itemId) => {
+        if (!editForm.code || !editForm.name) {
+            alert('El código y nombre son obligatorios');
+            return;
+        }
+
+        try {
+            const refPath = activeTab === 'inspection'
+                ? `configuracion/elementosInspeccion/${itemId}`
+                : `configuracion/elementosTrabajo/${itemId}`;
+
+            const elementRef = databaseRef(database, refPath);
+
+            await update(elementRef, {
+                code: editForm.code.toUpperCase(),
+                name: editForm.name,
+                detail: editForm.detail,
+                requiresObservation: activeTab === 'inspection' ? editForm.requiresObservation : false,
+                updatedAt: new Date().toISOString()
+            });
+
+            setEditingElement(null);
+            setEditForm({
+                code: '',
+                name: '',
+                detail: '',
+                requiresObservation: false
+            });
+        } catch (error) {
+            console.error('Error al actualizar elemento:', error);
+            alert('Error al actualizar el elemento');
+        }
+    };
+    // Función para cancelar edición
+    const cancelEdit = () => {
+        setEditingElement(null);
+        setEditForm({
+            code: '',
+            name: '',
+            detail: '',
+            requiresObservation: false
+        });
+    };
+
+    if (!show) return null;
+
+    return (
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 1000,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '20px'
+        }}>
+            <div style={{
+                background: 'white',
+                borderRadius: '12px',
+                maxWidth: '900px',
+                width: '100%',
+                maxHeight: '90vh',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+            }}>
+                {/* Header del Modal */}
+                <div style={{
+                    padding: '20px',
+                    borderBottom: '1px solid #e5e7eb',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                }}>
+                    <h2 style={{
+                        margin: 0,
+                        fontSize: '20px',
+                        color: '#1f2937'
+                    }}>
+                        ⚙️ Gestión de Elementos de Mantenimiento
+                    </h2>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            padding: '8px 12px',
+                            background: '#6b7280',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '14px'
+                        }}
+                    >
+                        ✕ Cerrar
+                    </button>
+                </div>
+
+                {/* Tabs */}
+                <div style={{
+                    display: 'flex',
+                    borderBottom: '1px solid #e5e7eb',
+                    padding: '0 20px'
+                }}>
+                    <button
+                        onClick={() => {
+                            setActiveTab('inspection');
+                            setNewElement(prev => ({ ...prev, type: 'inspection' }));
+                        }}
+                        style={{
+                            padding: '12px 24px',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: activeTab === 'inspection' ? '2px solid #3b82f6' : '2px solid transparent',
+                            color: activeTab === 'inspection' ? '#3b82f6' : '#6b7280',
+                            fontSize: '14px',
+                            fontWeight: activeTab === 'inspection' ? '600' : '400',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        🔍 Elementos de Inspección ({inspectionItems.length})
+                    </button>
+                    <button
+                        onClick={() => {
+                            setActiveTab('works');
+                            setNewElement(prev => ({ ...prev, type: 'work' }));
+                        }}
+                        style={{
+                            padding: '12px 24px',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: activeTab === 'works' ? '2px solid #3b82f6' : '2px solid transparent',
+                            color: activeTab === 'works' ? '#3b82f6' : '#6b7280',
+                            fontSize: '14px',
+                            fontWeight: activeTab === 'works' ? '600' : '400',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        ✅ Trabajos Realizados ({workItems.length})
+                    </button>
+                </div>
+
+                {/* Contenido del Tab */}
+                <div style={{
+                    flex: 1,
+                    overflow: 'auto',
+                    padding: '20px'
+                }}>
+                    {/* Barra de búsqueda y botón de nuevo */}
+                    <div style={{
+                        display: 'flex',
+                        gap: '10px',
+                        marginBottom: '20px'
+                    }}>
+                        <input
+                            type="text"
+                            placeholder="Buscar por código, nombre o detalle..."
+                            value={elementFilter}
+                            onChange={(e) => setElementFilter(e.target.value)}
+                            style={{
+                                flex: 1,
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                            }}
+                        />
+                        <button
+                            onClick={() => setShowNewElementForm(!showNewElementForm)}
+                            style={{
+                                padding: '10px 20px',
+                                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {showNewElementForm ? '✖ Cancelar' : '➕ Nuevo Elemento'}
+                        </button>
+                    </div>
+
+                    {/* Formulario de nuevo elemento */}
+                    {showNewElementForm && (
+                        <div style={{
+                            padding: '20px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            marginBottom: '20px'
+                        }}>
+                            <h4 style={{
+                                margin: '0 0 15px 0',
+                                fontSize: '16px',
+                                color: '#374151'
+                            }}>
+                                Crear Nuevo Elemento de {activeTab === 'inspection' ? 'Inspección' : 'Trabajo'}
+                            </h4>
+
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: isMobile ? '1fr' : '1fr 2fr',
+                                gap: '15px'
+                            }}>
+                                <div>
+                                    <label style={{
+                                        display: 'block',
+                                        marginBottom: '6px',
+                                        fontSize: '13px',
+                                        color: '#374151'
+                                    }}>
+                                        Código *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newElement.code}
+                                        onChange={(e) => setNewElement(prev => ({ ...prev, code: e.target.value }))}
+                                        placeholder="Ej: INSP001"
+                                        style={{
+                                            width: '100%',
+                                            padding: '8px',
+                                            border: '1px solid #d1d5db',
+                                            borderRadius: '4px',
+                                            fontSize: '14px'
+                                        }}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label style={{
+                                        display: 'block',
+                                        marginBottom: '6px',
+                                        fontSize: '13px',
+                                        color: '#374151'
+                                    }}>
+                                        Nombre *
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newElement.name}
+                                        onChange={(e) => setNewElement(prev => ({ ...prev, name: e.target.value }))}
+                                        placeholder="Ej: Revisión de frenos delanteros"
+                                        style={{
+                                            width: '100%',
+                                            padding: '8px',
+                                            border: '1px solid #d1d5db',
+                                            borderRadius: '4px',
+                                            fontSize: '14px'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ marginTop: '15px' }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '6px',
+                                    fontSize: '13px',
+                                    color: '#374151'
+                                }}>
+                                    Detalle (opcional)
+                                </label>
+                                <textarea
+                                    value={newElement.detail}
+                                    onChange={(e) => setNewElement(prev => ({ ...prev, detail: e.target.value }))}
+                                    placeholder="Descripción detallada del elemento..."
+                                    rows={3}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '4px',
+                                        fontSize: '14px',
+                                        resize: 'none'
+                                    }}
+                                />
+                            </div>
+
+                            {activeTab === 'inspection' && (
+                                <div style={{ marginTop: '15px' }}>
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        cursor: 'pointer'
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={newElement.requiresObservation}
+                                            onChange={(e) => setNewElement(prev => ({ ...prev, requiresObservation: e.target.checked }))}
+                                        />
+                                        <span style={{ fontSize: '14px', color: '#374151' }}>
+                                            Requiere observaciones cuando hay problemas
+                                        </span>
+                                    </label>
+                                </div>
+                            )}
+
+                            <button
+                                onClick={handleSaveNewElement}
+                                style={{
+                                    marginTop: '15px',
+                                    padding: '10px 20px',
+                                    background: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    fontSize: '14px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                💾 Guardar Elemento
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Lista de elementos */}
+                    <div style={{
+                        display: 'grid',
+                        gap: '10px'
+                    }}>
+                        {getFilteredElements().length === 0 ? (
+                            <div style={{
+                                padding: '40px',
+                                textAlign: 'center',
+                                color: '#6b7280'
+                            }}>
+                                <div style={{ fontSize: '32px', marginBottom: '10px' }}>
+                                    {activeTab === 'inspection' ? '🔍' : '✅'}
+                                </div>
+                                <p>No hay elementos {activeTab === 'inspection' ? 'de inspección' : 'de trabajo'} configurados</p>
+                                <p style={{ fontSize: '14px' }}>Crea tu primer elemento usando el botón de arriba</p>
+                            </div>
+                        ) : (
+                            getFilteredElements().map(item => (
+                                <div key={item.id} style={{
+                                    padding: '15px',
+                                    background: editingElement === item.id ? '#f0f9ff' : 'white',
+                                    border: '1px solid',
+                                    borderColor: editingElement === item.id ? '#3b82f6' : '#e5e7eb',
+                                    borderRadius: '8px'
+                                }}>
+                                    {editingElement === item.id ? (
+                                        // Modo edición
+                                        <div>
+                                            <div style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: isMobile ? '1fr' : '150px 1fr',
+                                                gap: '10px',
+                                                marginBottom: '10px'
+                                            }}>
+                                                <input
+                                                    type="text"
+                                                    value={editForm.code}
+                                                    onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
+                                                    placeholder="Código"
+                                                    style={{
+                                                        padding: '6px',
+                                                        border: '1px solid #d1d5db',
+                                                        borderRadius: '4px',
+                                                        fontSize: '14px'
+                                                    }}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={editForm.name}
+                                                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                                    placeholder="Nombre"
+                                                    style={{
+                                                        padding: '6px',
+                                                        border: '1px solid #d1d5db',
+                                                        borderRadius: '4px',
+                                                        fontSize: '14px'
+                                                    }}
+                                                />
+                                            </div>
+                                            <textarea
+                                                value={editForm.detail}
+                                                onChange={(e) => setEditForm({ ...editForm, detail: e.target.value })}
+                                                placeholder="Detalle (opcional)"
+                                                rows={2}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '6px',
+                                                    border: '1px solid #d1d5db',
+                                                    borderRadius: '4px',
+                                                    fontSize: '13px',
+                                                    resize: 'none',
+                                                    marginBottom: '10px'
+                                                }}
+                                            />
+                                            {activeTab === 'inspection' && (
+                                                <label style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px',
+                                                    marginBottom: '10px',
+                                                    cursor: 'pointer'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editForm.requiresObservation}
+                                                        onChange={(e) => setEditForm({ ...editForm, requiresObservation: e.target.checked })}
+                                                    />
+                                                    <span style={{ fontSize: '13px', color: '#374151' }}>
+                                                        Requiere observaciones
+                                                    </span>
+                                                </label>
+                                            )}
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <button
+                                                    onClick={() => handleSaveEdit(item.id)}
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        background: '#22c55e',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '4px',
+                                                        fontSize: '12px',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    💾 Guardar
+                                                </button>
+                                                <button
+                                                    onClick={cancelEdit}
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        background: '#6b7280',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '4px',
+                                                        fontSize: '12px',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    Cancelar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        // Modo visualización
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
+                                                    marginBottom: '8px'
+                                                }}>
+                                                    <span style={{
+                                                        padding: '4px 8px',
+                                                        background: '#dbeafe',
+                                                        color: '#1e40af',
+                                                        borderRadius: '4px',
+                                                        fontSize: '12px',
+                                                        fontWeight: '600'
+                                                    }}>
+                                                        {item.code}
+                                                    </span>
+                                                    <span style={{
+                                                        fontSize: '15px',
+                                                        fontWeight: '500',
+                                                        color: '#1f2937'
+                                                    }}>
+                                                        {item.name}
+                                                    </span>
+                                                    {item.requiresObservation && (
+                                                        <span style={{
+                                                            padding: '2px 6px',
+                                                            background: '#fef3c7',
+                                                            color: '#92400e',
+                                                            borderRadius: '4px',
+                                                            fontSize: '11px'
+                                                        }}>
+                                                            Requiere obs.
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {item.detail && (
+                                                    <p style={{
+                                                        margin: 0,
+                                                        fontSize: '13px',
+                                                        color: '#6b7280',
+                                                        lineHeight: '1.4'
+                                                    }}>
+                                                        {item.detail}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <button
+                                                    onClick={() => startEditing(item)}
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        background: '#3b82f6',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '4px',
+                                                        fontSize: '12px',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    ✏️ Editar
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteElement(item.id, activeTab === 'inspection' ? 'inspection' : 'work')}
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        background: '#ef4444',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '4px',
+                                                        fontSize: '12px',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    🗑️ Eliminar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Componente para selección de vehículo (sin cambios)
 const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
-    // Agregar estado para el filtro
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState('todos');
 
@@ -688,16 +1381,13 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
         return 'ok';
     };
 
-    // Filtrar vehículos
     const filteredVehiculos = vehiculos.filter(vehicle => {
-        // Filtro por búsqueda
         const matchesSearch =
             vehicle.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             vehicle.patente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             vehicle.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             vehicle.modelo?.toLowerCase().includes(searchTerm.toLowerCase());
 
-        // Filtro por estado de mantenimiento
         const status = getMaintenanceStatus(vehicle);
         const matchesStatus =
             filterStatus === 'todos' ||
@@ -711,7 +1401,6 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
 
     return (
         <div>
-            {/* Barra de filtros */}
             <div style={{
                 background: 'white',
                 borderRadius: '12px',
@@ -790,7 +1479,6 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
                 </div>
             </div>
 
-            {/* Grid de vehículos */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '100%' : '300px'}, 1fr))`,
@@ -992,8 +1680,7 @@ const VehicleInfoCard = ({ vehicle, isMobile }) => (
         </div>
     </div>
 );
-
-// Componente del formulario de mantenimiento
+// Componente del formulario de mantenimiento modificado
 const MaintenanceForm = ({
     form,
     setForm,
@@ -1005,9 +1692,36 @@ const MaintenanceForm = ({
     loading,
     isMobile,
     vehicle,
-    currentUser  // AGREGAR ESTE PROP
-
+    currentUser,
+    inspectionItems,
+    workItems,
+    handleInspectionChange,
+    handleWorkChange
 }) => {
+    const [inspectionFilter, setInspectionFilter] = useState('');
+    const [workFilter, setWorkFilter] = useState('');
+
+    // Funciones de filtrado
+    const getFilteredInspectionItems = () => {
+        if (!inspectionFilter) return inspectionItems;
+
+        return inspectionItems.filter(item =>
+            item.name.toLowerCase().includes(inspectionFilter.toLowerCase()) ||
+            item.code.toLowerCase().includes(inspectionFilter.toLowerCase()) ||
+            (item.detail && item.detail.toLowerCase().includes(inspectionFilter.toLowerCase()))
+        );
+    };
+
+    const getFilteredWorkItems = () => {
+        if (!workFilter) return workItems;
+
+        return workItems.filter(item =>
+            item.name.toLowerCase().includes(workFilter.toLowerCase()) ||
+            item.code.toLowerCase().includes(workFilter.toLowerCase()) ||
+            (item.detail && item.detail.toLowerCase().includes(workFilter.toLowerCase()))
+        );
+    };
+
     return (
         <form onSubmit={onSubmit} style={{
             background: 'white',
@@ -1037,36 +1751,46 @@ const MaintenanceForm = ({
                 }}>
                     📋 Información General
                 </h4>
+                <ServiceCatalogSelector
+                    onAddService={(servicio) => {
+                        setForm(prev => {
+                            const nuevosServicios = [...(prev.serviciosCatalogo || []), servicio];
+                            const nuevoTotal = nuevosServicios.reduce((total, s) =>
+                                total + (s.totales?.total || 0), 0
+                            );
+
+                            return {
+                                ...prev,
+                                serviciosCatalogo: nuevosServicios,
+                                costoMantenimiento: nuevoTotal
+                            };
+                        });
+                    }}
+                    selectedServices={form.serviciosCatalogo || []}
+                    onRemoveService={(idTemp) => {
+                        setForm(prev => {
+                            const serviciosActualizados = prev.serviciosCatalogo.filter(
+                                s => s.idTemp !== idTemp
+                            );
+                            const nuevoTotal = serviciosActualizados.reduce((total, s) =>
+                                total + (s.totales?.total || 0), 0
+                            );
+
+                            return {
+                                ...prev,
+                                serviciosCatalogo: serviciosActualizados,
+                                costoMantenimiento: nuevoTotal
+                            };
+                        });
+                    }}
+                    isMobile={isMobile}
+                />
 
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
                     gap: '15px'
                 }}>
-                    <div>
-                        <label style={{
-                            display: 'block',
-                            marginBottom: '6px',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            color: '#374151'
-                        }}>
-                            Hora del Mantenimiento *
-                        </label>
-                        <input
-                            type="time"
-                            required
-                            value={form.hora}
-                            onChange={(e) => setForm({ ...form, hora: e.target.value })}
-                            style={{
-                                width: '100%',
-                                padding: '10px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: '6px',
-                                fontSize: '14px'
-                            }}
-                        />
-                    </div>
                     <div>
                         <label style={{
                             display: 'block',
@@ -1082,6 +1806,31 @@ const MaintenanceForm = ({
                             required
                             value={form.fecha}
                             onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                            style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                            }}
+                        />
+                    </div>
+
+                    <div>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '6px',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            color: '#374151'
+                        }}>
+                            Hora del Mantenimiento *
+                        </label>
+                        <input
+                            type="time"
+                            required
+                            value={form.hora}
+                            onChange={(e) => setForm({ ...form, hora: e.target.value })}
                             style={{
                                 width: '100%',
                                 padding: '10px',
@@ -1223,155 +1972,213 @@ const MaintenanceForm = ({
                 </div>
             </div>
 
-            {/* Checklist de inspección de seguridad */}
-            <div style={{
-                marginBottom: '25px',
-                paddingBottom: '20px',
-                borderBottom: '1px solid #e5e7eb'
-            }}>
-                <h4 style={{
-                    margin: '0 0 15px 0',
-                    fontSize: '16px',
-                    color: '#374151'
-                }}>
-                    🔍 Inspección de Elementos de Seguridad
-                </h4>
-
+            {/* Checklist de inspección de seguridad - DINÁMICO */}
+            {inspectionItems.length > 0 && (
                 <div style={{
-                    display: 'grid',
-                    gap: '15px'
+                    marginBottom: '25px',
+                    paddingBottom: '20px',
+                    borderBottom: '1px solid #e5e7eb'
                 }}>
-                    {/* Gata */}
-                    <InspectionItem
-                        label="🔧 Gata"
-                        value={form.gata}
-                        onChange={(value) => setForm({ ...form, gata: value })}
-                        observations={form.gataObservaciones}
-                        onObservationsChange={(value) => setForm({ ...form, gataObservaciones: value })}
-                    />
+                    <h4 style={{
+                        margin: '0 0 15px 0',
+                        fontSize: '16px',
+                        color: '#374151'
+                    }}>
+                        🔍 Elementos de Inspección de Seguridad
+                    </h4>
 
-                    {/* Chaleco Reflectante */}
-                    <InspectionItem
-                        label="🦺 Chaleco Reflectante"
-                        value={form.chalecoReflectante}
-                        onChange={(value) => setForm({ ...form, chalecoReflectante: value })}
-                        observations={form.chalecoObservaciones}
-                        onObservationsChange={(value) => setForm({ ...form, chalecoObservaciones: value })}
-                    />
-
-                    {/* Llave de Repuesto */}
-                    <InspectionItem
-                        label="🔑 Llave de Repuesto"
-                        value={form.llaveRepuesto}
-                        onChange={(value) => setForm({ ...form, llaveRepuesto: value })}
-                        observations={form.llaveObservaciones}
-                        onObservationsChange={(value) => setForm({ ...form, llaveObservaciones: value })}
-                    />
-
-                    {/* Cinturón de Seguridad */}
-                    <InspectionItem
-                        label="🔒 Cinturón de Seguridad"
-                        value={form.cinturon}
-                        onChange={(value) => setForm({ ...form, cinturon: value })}
-                        observations={form.cinturonObservaciones}
-                        onObservationsChange={(value) => setForm({ ...form, cinturonObservaciones: value })}
-                    />
-
-                    {/* Parabrisas */}
-                    <InspectionItem
-                        label="🪟 Estado del Parabrisas"
-                        value={form.parabrisas}
-                        onChange={(value) => setForm({ ...form, parabrisas: value })}
-                        observations={form.parabrisasObservaciones}
-                        onObservationsChange={(value) => setForm({ ...form, parabrisasObservaciones: value })}
-                        noAplica={false}
-                    />
-
-                    {/* Luces de Freno */}
-                    <InspectionItem
-                        label="🔴 Luces de Freno"
-                        value={form.lucesFreno}
-                        onChange={(value) => setForm({ ...form, lucesFreno: value })}
-                        observations={form.lucesObservaciones}
-                        onObservationsChange={(value) => setForm({ ...form, lucesObservaciones: value })}
-                        noAplica={false}
-                    />
-
-                    {/* Luces Delanteras */}
-                    <InspectionItem
-                        label="💡 Luces Delanteras"
-                        value={form.lucesDelanteras}
-                        onChange={(value) => setForm({ ...form, lucesDelanteras: value })}
-                        observations={form.lucesDObservaciones}
-                        onObservationsChange={(value) => setForm({ ...form, lucesDObservaciones: value })}
-                        noAplica={false}
-                    />
-                </div>
-            </div>
-
-            {/* Trabajos realizados */}
-            <div style={{
-                marginBottom: '25px',
-                paddingBottom: '20px',
-                borderBottom: '1px solid #e5e7eb'
-            }}>
-                <h4 style={{
-                    margin: '0 0 15px 0',
-                    fontSize: '16px',
-                    color: '#374151'
-                }}>
-                    ✅ Trabajos Realizados
-                </h4>
-
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
-                    gap: '10px'
-                }}>
-                    {[
-                        { key: 'cambioAceite', label: '🛢️ Cambio de Aceite' },
-                        { key: 'filtroAire', label: '💨 Filtro de Aire' },
-                        { key: 'filtroAceite', label: '🔧 Filtro de Aceite' },
-                        { key: 'filtroCombustible', label: '⛽ Filtro de Combustible' },
-                        { key: 'revisionFrenos', label: '🛑 Revisión de Frenos' },
-                        { key: 'revisionNeumaticos', label: '🛞 Revisión de Neumáticos' },
-                        { key: 'revisionSuspension', label: '🔩 Revisión de Suspensión' },
-                        { key: 'revisionDireccion', label: '🎯 Revisión de Dirección' },
-                        { key: 'revisionBateria', label: '🔋 Revisión de Batería' },
-                        { key: 'revisionLuces', label: '💡 Revisión de Luces' },
-                        { key: 'nivelLiquidos', label: '💧 Nivel de Líquidos' }
-                    ].map(item => (
-                        <label key={item.key} style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '8px',
-                            background: form[item.key] ? '#dcfce7' : '#f9fafb',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                        }}>
-                            <input
-                                type="checkbox"
-                                checked={form[item.key]}
-                                onChange={(e) => setForm({ ...form, [item.key]: e.target.checked })}
+                    {/* Barra de búsqueda para inspección */}
+                    <div style={{
+                        marginBottom: '15px',
+                        display: 'flex',
+                        gap: '10px',
+                        alignItems: 'center'
+                    }}>
+                        <input
+                            type="text"
+                            placeholder="Buscar elemento de inspección..."
+                            value={inspectionFilter}
+                            onChange={(e) => setInspectionFilter(e.target.value)}
+                            style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                            }}
+                        />
+                        {inspectionFilter && (
+                            <button
+                                type="button"
+                                onClick={() => setInspectionFilter('')}
                                 style={{
-                                    width: '18px',
-                                    height: '18px',
+                                    padding: '8px 12px',
+                                    background: '#6b7280',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    fontSize: '13px',
                                     cursor: 'pointer'
                                 }}
-                            />
-                            <span style={{
-                                fontSize: '14px',
-                                color: '#374151'
-                            }}>
-                                {item.label}
-                            </span>
-                        </label>
-                    ))}
-                </div>
-            </div>
+                            >
+                                Limpiar
+                            </button>
+                        )}
+                        <span style={{
+                            padding: '6px 12px',
+                            background: '#f3f4f6',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            color: '#6b7280',
+                            minWidth: '60px',
+                            textAlign: 'center'
+                        }}>
+                            {getFilteredInspectionItems().length} / {inspectionItems.length}
+                        </span>
+                    </div>
 
+                    <div style={{
+                        display: 'grid',
+                        gap: '15px'
+                    }}>
+                        {getFilteredInspectionItems().map(item => (
+                            <DynamicInspectionItem
+                                key={item.code}
+                                item={item}
+                                value={form.inspectionData[`${item.code}_status`] || 'no_aplica'}
+                                observations={form.inspectionData[`${item.code}_observations`] || ''}
+                                onChange={(field, value) => handleInspectionChange(item.code, field, value)}
+                            />
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Trabajos realizados - DINÁMICO */}
+            {workItems.length > 0 && (
+                <div style={{
+                    marginBottom: '25px',
+                    paddingBottom: '20px',
+                    borderBottom: '1px solid #e5e7eb'
+                }}>
+                    <h4 style={{
+                        margin: '0 0 15px 0',
+                        fontSize: '16px',
+                        color: '#374151'
+                    }}>
+                        ✅ Trabajos Realizados
+                    </h4>
+
+                    {/* Barra de búsqueda para trabajos */}
+                    <div style={{
+                        marginBottom: '15px',
+                        display: 'flex',
+                        gap: '10px',
+                        alignItems: 'center'
+                    }}>
+                        <input
+                            type="text"
+                            placeholder="Buscar trabajo..."
+                            value={workFilter}
+                            onChange={(e) => setWorkFilter(e.target.value)}
+                            style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px'
+                            }}
+                        />
+                        {workFilter && (
+                            <button
+                                type="button"
+                                onClick={() => setWorkFilter('')}
+                                style={{
+                                    padding: '8px 12px',
+                                    background: '#6b7280',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    fontSize: '13px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Limpiar
+                            </button>
+                        )}
+                        <span style={{
+                            padding: '6px 12px',
+                            background: '#f3f4f6',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            color: '#6b7280',
+                            minWidth: '60px',
+                            textAlign: 'center'
+                        }}>
+                            {getFilteredWorkItems().length} / {workItems.length}
+                        </span>
+                    </div>
+
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
+                        gap: '10px'
+                    }}>
+                        {getFilteredWorkItems().map(item => (
+                            <label key={item.code} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '8px',
+                                background: form.workData[item.code] ? '#dcfce7' : '#f9fafb',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}>
+                                <input
+                                    type="checkbox"
+                                    checked={form.workData[item.code] || false}
+                                    onChange={(e) => handleWorkChange(item.code, e.target.checked)}
+                                    style={{
+                                        width: '18px',
+                                        height: '18px',
+                                        cursor: 'pointer'
+                                    }}
+                                />
+                                <div style={{ flex: 1 }}>
+                                    <span style={{
+                                        fontSize: '14px',
+                                        color: '#374151',
+                                        fontWeight: '500'
+                                    }}>
+                                        {item.name}
+                                    </span>
+                                    {item.detail && (
+                                        <div style={{
+                                            fontSize: '11px',
+                                            color: '#6b7280',
+                                            marginTop: '2px'
+                                        }}>
+                                            {item.detail}
+                                        </div>
+                                    )}
+                                </div>
+                                <span style={{
+                                    padding: '2px 6px',
+                                    background: '#dbeafe',
+                                    color: '#1e40af',
+                                    borderRadius: '4px',
+                                    fontSize: '10px'
+                                }}>
+                                    {item.code}
+                                </span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Resto del formulario continúa igual... */}
             {/* Observaciones generales */}
             <div style={{
                 marginBottom: '25px',
@@ -1478,7 +2285,6 @@ const MaintenanceForm = ({
                     📷 Fotos del Mantenimiento
                 </h4>
 
-                {/* Fotos existentes */}
                 {form.fotos && form.fotos.length > 0 && (
                     <div style={{
                         display: 'grid',
@@ -1537,7 +2343,6 @@ const MaintenanceForm = ({
                     </div>
                 )}
 
-                {/* Botón de carga de fotos */}
                 <div>
                     <input
                         type="file"
@@ -1584,75 +2389,16 @@ const MaintenanceForm = ({
                 >
                     {loading ? '⏳ Guardando...' : '✅ Guardar Mantenimiento'}
                 </button>
-                <button
-                    type="button"
-                    onClick={() => {
-                        // Resetear el formulario directamente aquí
-                        setForm({
-                            fecha: new Date().toISOString().split('T')[0],
-                            tipoMantenimiento: 'preventivo',
-                            kilometraje: '',
-                            horasUso: '',
-                            gata: 'no_aplica',
-                            gataObservaciones: '',
-                            chalecoReflectante: 'no_aplica',
-                            chalecoObservaciones: '',
-                            llaveRepuesto: 'no_aplica',
-                            llaveObservaciones: '',
-                            cinturon: 'no_aplica',
-                            cinturonObservaciones: '',
-                            parabrisas: 'bueno',
-                            parabrisasObservaciones: '',
-                            lucesFreno: 'bueno',
-                            lucesObservaciones: '',
-                            lucesDelanteras: 'bueno',
-                            lucesDObservaciones: '',
-                            cambioAceite: false,
-                            filtroAire: false,
-                            filtroAceite: false,
-                            filtroCombustible: false,
-                            revisionFrenos: false,
-                            revisionNeumaticos: false,
-                            revisionSuspension: false,
-                            revisionDireccion: false,
-                            revisionBateria: false,
-                            revisionLuces: false,
-                            nivelLiquidos: false,
-                            observacionesGenerales: '',
-                            proximoMantenimientoKm: '',
-                            proximoMantenimientoFecha: '',
-                            realizadoPor: currentUser.name || currentUser.email,
-                            tallerResponsable: '',
-                            costoMantenimiento: 0,
-                            fotos: []
-                        });
-                    }}
-                    style={{
-                        padding: '12px 24px',
-                        background: '#6b7280',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '16px',
-                        fontWeight: '500',
-                        cursor: 'pointer'
-                    }}
-                >
-                    Limpiar Formulario
-                </button>
             </div>
         </form>
     );
 };
-
-// Componente para items de inspección
-const InspectionItem = ({
-    label,
+// Componente para items de inspección dinámicos
+const DynamicInspectionItem = ({
+    item,
     value,
-    onChange,
     observations,
-    onObservationsChange,
-    noAplica = true
+    onChange
 }) => {
     return (
         <div style={{
@@ -1667,15 +2413,36 @@ const InspectionItem = ({
                 justifyContent: 'space-between',
                 marginBottom: observations ? '10px' : '0'
             }}>
-                <span style={{
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    color: '#374151'
-                }}>
-                    {label}
-                </span>
+                <div style={{ flex: 1 }}>
+                    <span style={{
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        color: '#374151'
+                    }}>
+                        {item.name}
+                    </span>
+                    <span style={{
+                        marginLeft: '8px',
+                        padding: '2px 6px',
+                        background: '#dbeafe',
+                        color: '#1e40af',
+                        borderRadius: '4px',
+                        fontSize: '10px'
+                    }}>
+                        {item.code}
+                    </span>
+                    {item.detail && (
+                        <div style={{
+                            fontSize: '12px',
+                            color: '#6b7280',
+                            marginTop: '4px'
+                        }}>
+                            {item.detail}
+                        </div>
+                    )}
+                </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', marginLeft: '10px' }}>
                     <label style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -1684,10 +2451,10 @@ const InspectionItem = ({
                     }}>
                         <input
                             type="radio"
-                            name={label}
+                            name={item.code}
                             value="bueno"
                             checked={value === 'bueno'}
-                            onChange={() => onChange('bueno')}
+                            onChange={() => onChange('status', 'bueno')}
                         />
                         <span style={{ fontSize: '13px' }}>✅ Bueno</span>
                     </label>
@@ -1700,12 +2467,12 @@ const InspectionItem = ({
                     }}>
                         <input
                             type="radio"
-                            name={label}
+                            name={item.code}
                             value="requiere_atencion"
                             checked={value === 'requiere_atencion'}
-                            onChange={() => onChange('requiere_atencion')}
+                            onChange={() => onChange('status', 'requiere_atencion')}
                         />
-                        <span style={{ fontSize: '13px' }}>⚠️ Requiere Atención</span>
+                        <span style={{ fontSize: '13px' }}>⚠️ Atención</span>
                     </label>
 
                     <label style={{
@@ -1716,39 +2483,37 @@ const InspectionItem = ({
                     }}>
                         <input
                             type="radio"
-                            name={label}
+                            name={item.code}
                             value="malo"
                             checked={value === 'malo'}
-                            onChange={() => onChange('malo')}
+                            onChange={() => onChange('status', 'malo')}
                         />
                         <span style={{ fontSize: '13px' }}>❌ Malo</span>
                     </label>
 
-                    {noAplica && (
-                        <label style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            cursor: 'pointer'
-                        }}>
-                            <input
-                                type="radio"
-                                name={label}
-                                value="no_aplica"
-                                checked={value === 'no_aplica'}
-                                onChange={() => onChange('no_aplica')}
-                            />
-                            <span style={{ fontSize: '13px' }}>N/A</span>
-                        </label>
-                    )}
+                    <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        cursor: 'pointer'
+                    }}>
+                        <input
+                            type="radio"
+                            name={item.code}
+                            value="no_aplica"
+                            checked={value === 'no_aplica'}
+                            onChange={() => onChange('status', 'no_aplica')}
+                        />
+                        <span style={{ fontSize: '13px' }}>N/A</span>
+                    </label>
                 </div>
             </div>
 
-            {(value === 'requiere_atencion' || value === 'malo') && (
+            {item.requiresObservation && (value === 'requiere_atencion' || value === 'malo') && (
                 <input
                     type="text"
                     value={observations}
-                    onChange={(e) => onObservationsChange(e.target.value)}
+                    onChange={(e) => onChange('observations', e.target.value)}
                     placeholder="Especifique el problema..."
                     style={{
                         width: '100%',
@@ -1764,13 +2529,7 @@ const InspectionItem = ({
 };
 
 // Componente para el historial
-const MaintenanceHistory = ({ history, isMobile, vehicle, currentUser }) => {
-    console.log('Props recibidas en MaintenanceHistory:', {
-        history: history?.length,
-        isMobile,
-        vehicle,
-        currentUser
-    });
+const MaintenanceHistory = ({ history, isMobile, vehicle, currentUser, inspectionItems, workItems }) => {
     if (history.length === 0) {
         return (
             <div style={{
@@ -1814,8 +2573,10 @@ const MaintenanceHistory = ({ history, isMobile, vehicle, currentUser }) => {
                         maintenance={maintenance}
                         isLast={index === history.length - 1}
                         isMobile={isMobile}
-                        vehicle={vehicle}       
+                        vehicle={vehicle}
                         currentUser={currentUser}
+                        inspectionItems={inspectionItems}
+                        workItems={workItems}
                     />
                 ))}
             </div>
@@ -1824,13 +2585,11 @@ const MaintenanceHistory = ({ history, isMobile, vehicle, currentUser }) => {
 };
 
 // Componente para cada tarjeta de mantenimiento
-
-const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser }) => {
+const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser, inspectionItems, workItems }) => {
     const [expanded, setExpanded] = useState(false);
-    console.log('Props en MaintenanceCard:', { vehicle, currentUser, maintenance });
+
 
     const handleExportSingle = () => {
-        // Validar que existan los datos necesarios
         if (!vehicle) {
             console.error('Error: No se encontró información del vehículo');
             alert('Error: No se puede exportar el PDF. Falta información del vehículo.');
@@ -1844,7 +2603,6 @@ const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser }
         }
 
         try {
-            // Si el mantenimiento no tiene todos los datos del vehículo, usar los actuales
             const maintenanceWithVehicle = {
                 ...maintenance,
                 vehiculoNombre: maintenance.vehiculoNombre || vehicle.nombre,
@@ -1946,14 +2704,7 @@ const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser }
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px',
-                                transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.background = '#dc2626';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.background = '#ef4444';
+                                gap: '4px'
                             }}
                         >
                             📄 PDF
@@ -1978,116 +2729,45 @@ const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser }
                     borderRadius: '8px',
                     border: '1px solid #e5e7eb'
                 }}>
-                    {/* Trabajos realizados */}
-                    {(() => {
-                        const trabajos = [
-                            { key: 'cambioAceite', label: '🛢️ Cambio de Aceite' },
-                            { key: 'filtroAire', label: '💨 Filtro de Aire' },
-                            { key: 'filtroAceite', label: '🔧 Filtro de Aceite' },
-                            { key: 'filtroCombustible', label: '⛽ Filtro de Combustible' },
-                            { key: 'revisionFrenos', label: '🛑 Revisión de Frenos' },
-                            { key: 'revisionNeumaticos', label: '🛞 Revisión de Neumáticos' },
-                            { key: 'revisionSuspension', label: '🔩 Revisión de Suspensión' },
-                            { key: 'revisionDireccion', label: '🎯 Revisión de Dirección' },
-                            { key: 'revisionBateria', label: '🔋 Revisión de Batería' },
-                            { key: 'revisionLuces', label: '💡 Revisión de Luces' },
-                            { key: 'nivelLiquidos', label: '💧 Nivel de Líquidos' }
-                        ].filter(t => maintenance[t.key]);
-
-                        if (trabajos.length > 0) {
-                            return (
-                                <div style={{ marginBottom: '15px' }}>
-                                    <h5 style={{
-                                        margin: '0 0 10px 0',
-                                        fontSize: '14px',
-                                        fontWeight: '600',
-                                        color: '#374151'
+                    {/* Mostrar servicios del catálogo si existen */}
+                    {maintenance.serviciosCatalogo && maintenance.serviciosCatalogo.length > 0 && (
+                        <div style={{ marginBottom: '15px' }}>
+                            <h5 style={{
+                                margin: '0 0 10px 0',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                color: '#374151'
+                            }}>
+                                Servicios Realizados:
+                            </h5>
+                            <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                                {maintenance.serviciosCatalogo.map((servicio, idx) => (
+                                    <div key={idx} style={{
+                                        padding: '6px',
+                                        background: '#f9fafb',
+                                        borderRadius: '4px',
+                                        marginBottom: '4px'
                                     }}>
-                                        Trabajos Realizados:
-                                    </h5>
-                                    <div style={{
-                                        display: 'flex',
-                                        flexWrap: 'wrap',
-                                        gap: '8px'
-                                    }}>
-                                        {trabajos.map(trabajo => (
-                                            <span key={trabajo.key} style={{
-                                                padding: '4px 8px',
-                                                background: '#dcfce7',
-                                                color: '#15803d',
-                                                borderRadius: '4px',
-                                                fontSize: '12px'
-                                            }}>
-                                                {trabajo.label}
-                                            </span>
-                                        ))}
+                                        <strong>{servicio.codigo}</strong> - {servicio.descripcion}
+                                        <span style={{ marginLeft: '10px' }}>
+                                            (Cantidad: {servicio.cantidadServicio}) -
+                                            Total: ${servicio.totales.total.toLocaleString()}
+                                        </span>
                                     </div>
-                                </div>
-                            );
-                        }
-                        return null;
-                    })()}
-
-                    {/* Inspecciones */}
-                    {(() => {
-                        const inspecciones = [
-                            { key: 'gata', label: '🔧 Gata', value: maintenance.gata, obs: maintenance.gataObservaciones },
-                            { key: 'chalecoReflectante', label: '🦺 Chaleco', value: maintenance.chalecoReflectante, obs: maintenance.chalecoObservaciones },
-                            { key: 'llaveRepuesto', label: '🔑 Llave Repuesto', value: maintenance.llaveRepuesto, obs: maintenance.llaveObservaciones },
-                            { key: 'cinturon', label: '🔒 Cinturón', value: maintenance.cinturon, obs: maintenance.cinturonObservaciones },
-                            { key: 'parabrisas', label: '🪟 Parabrisas', value: maintenance.parabrisas, obs: maintenance.parabrisasObservaciones },
-                            { key: 'lucesFreno', label: '🔴 Luces Freno', value: maintenance.lucesFreno, obs: maintenance.lucesObservaciones },
-                            { key: 'lucesDelanteras', label: '💡 Luces Delanteras', value: maintenance.lucesDelanteras, obs: maintenance.lucesDObservaciones }
-                        ].filter(i => i.value && i.value !== 'no_aplica');
-
-                        if (inspecciones.length > 0) {
-                            return (
-                                <div style={{ marginBottom: '15px' }}>
-                                    <h5 style={{
-                                        margin: '0 0 10px 0',
-                                        fontSize: '14px',
-                                        fontWeight: '600',
-                                        color: '#374151'
-                                    }}>
-                                        Inspección de Seguridad:
-                                    </h5>
-                                    <div style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))',
-                                        gap: '8px'
-                                    }}>
-                                        {inspecciones.map(insp => (
-                                            <div key={insp.key} style={{
-                                                padding: '6px 10px',
-                                                background: insp.value === 'bueno' ? '#dcfce7' :
-                                                    insp.value === 'requiere_atencion' ? '#fef3c7' : '#fee2e2',
-                                                borderRadius: '4px',
-                                                fontSize: '12px'
-                                            }}>
-                                                <span style={{ fontWeight: '500' }}>{insp.label}:</span>
-                                                <span style={{ marginLeft: '5px' }}>
-                                                    {insp.value === 'bueno' ? '✅' :
-                                                        insp.value === 'requiere_atencion' ? '⚠️' : '❌'}
-                                                </span>
-                                                {insp.obs && (
-                                                    <div style={{
-                                                        fontSize: '11px',
-                                                        color: '#6b7280',
-                                                        marginTop: '2px'
-                                                    }}>
-                                                        {insp.obs}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        }
-                        return null;
-                    })()}
-
-                    {/* Observaciones */}
+                                ))}
+                            </div>
+                            <div style={{
+                                marginTop: '8px',
+                                paddingTop: '8px',
+                                borderTop: '1px solid #e5e7eb',
+                                fontWeight: '600'
+                            }}>
+                                Total Servicios: ${maintenance.costoTotal?.toLocaleString() ||
+                                    maintenance.costoMantenimiento?.toLocaleString() || '0'}
+                            </div>
+                        </div>
+                    )}
+                    {/* Contenido expandido del mantenimiento */}
                     {maintenance.observacionesGenerales && (
                         <div style={{ marginBottom: '15px' }}>
                             <h5 style={{
@@ -2106,46 +2786,6 @@ const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser }
                             }}>
                                 {maintenance.observacionesGenerales}
                             </p>
-                        </div>
-                    )}
-
-                    {/* Fotos */}
-                    {maintenance.fotos && maintenance.fotos.length > 0 && (
-                        <div>
-                            <h5 style={{
-                                margin: '0 0 10px 0',
-                                fontSize: '14px',
-                                fontWeight: '600',
-                                color: '#374151'
-                            }}>
-                                📷 Fotos ({maintenance.fotos.length})
-                            </h5>
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-                                gap: '8px'
-                            }}>
-                                {maintenance.fotos.map((foto, index) => (
-                                    <a
-                                        key={index}
-                                        href={foto.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                    >
-                                        <img
-                                            src={foto.url}
-                                            alt={`Foto ${index + 1}`}
-                                            style={{
-                                                width: '100%',
-                                                height: '80px',
-                                                objectFit: 'cover',
-                                                borderRadius: '4px',
-                                                border: '1px solid #e5e7eb'
-                                            }}
-                                        />
-                                    </a>
-                                ))}
-                            </div>
                         </div>
                     )}
 
@@ -2176,5 +2816,4 @@ const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser }
         </div>
     );
 };
-
 export default VehicleMaintenanceModule;

@@ -10,6 +10,7 @@ import {
   onValue,
   off
 } from 'firebase/database';
+import ServiceCatalogManager from './ServiceCatalogManager';
 import { database } from '../config/firebase';
 import { pdfExportService } from '../services/pdfExportService';
 import { jsPDF } from 'jspdf';
@@ -23,6 +24,8 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
   const [editingMaintenance, setEditingMaintenance] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [showServiceCatalogManager, setShowServiceCatalogManager] = useState(false);
+
 
   // Estado para el paso actual del formulario
   const [currentStep, setCurrentStep] = useState(1);
@@ -596,6 +599,12 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
           {message.text}
         </div>
       )}
+      <ServiceCatalogManager
+        show={showServiceCatalogManager}
+        onClose={() => setShowServiceCatalogManager(false)}
+        isMobile={isMobile}
+        currentUser={currentUser}
+      />
 
       {/* Dashboard de estadísticas */}
       {!showMaintenanceForm && (
@@ -701,13 +710,39 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
           }}>
             {/* Primera fila: Botón nuevo y búsqueda */}
             <div style={{
+              marginBottom: '30px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               flexWrap: 'wrap',
-              gap: '15px',
-              marginBottom: '15px'
+              gap: '15px'
             }}>
+              <h1 style={{
+                margin: 0,
+                color: '#1e293b',
+                fontSize: isMobile ? '24px' : '28px',
+                fontWeight: '600'
+              }}>
+                ⛽ Centro de Suministros y Mantenimiento Preventivo
+              </h1>
+              <button
+                onClick={() => setShowServiceCatalogManager(true)}
+                style={{
+                  padding: '10px 20px',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                📦 Gestionar Catálogo
+              </button>
               <button
                 onClick={() => {
                   setShowMaintenanceForm(true);
