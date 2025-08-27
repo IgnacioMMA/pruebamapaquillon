@@ -1379,6 +1379,10 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         fechaBloqueo: formData.fechaBloqueo || '', // NUEVO
         fotoPerfil: formData.fotoPerfil || null,
         polizaSeguro: formData.polizaSeguro || null,
+        habilitado: true, // NUEVO: Usuario habilitado por defecto
+        fechaDeshabilitado: null,
+        motivoDeshabilitado: '',
+        deshabilitadoPor: null,
         createdAt: new Date().toISOString(),
         createdBy: currentUser.uid,
         active: true,
@@ -1503,6 +1507,124 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         await deleteApp(secondaryApp);
       }
       setLoading(false);
+    }
+  };
+
+  const handleToggleUserStatus = async (userId, userEmail) => {
+    const user = users.find(u => u.id === userId);
+    const nuevoEstado = !user.habilitado;
+
+    try {
+      await updateDoc(doc(firestore, 'users', userId), {
+        habilitado: nuevoEstado,
+        fechaDeshabilitado: nuevoEstado ? null : new Date().toISOString(),
+        motivoDeshabilitado: nuevoEstado ? '' : 'Deshabilitado por administrador',
+        deshabilitadoPor: nuevoEstado ? null : currentUser.uid,
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser.uid
+      });
+
+      // Si el usuario es trabajador, actualizar en Realtime Database
+      if (user.role === 'trabajador') {
+        const trabajadorRef = databaseRef(database, `trabajadores/${userId}`);
+        await update(trabajadorRef, {
+          habilitado: nuevoEstado,
+          fechaDeshabilitado: nuevoEstado ? null : new Date().toISOString(),
+          ultimaActualizacion: new Date().toISOString()
+        });
+
+        // Si se deshabilita y tiene vehículo asignado, liberar el vehículo
+        if (!nuevoEstado && user.vehicleId) {
+          const vehiculoRef = databaseRef(database, `vehiculos/${user.vehicleId}`);
+          await update(vehiculoRef, {
+            operadorAsignado: null,
+            ultimaActualizacion: new Date().toISOString()
+          });
+        }
+      }
+
+      setMessage({
+        type: 'success',
+        text: `✅ Usuario ${nuevoEstado ? 'habilitado' : 'deshabilitado'} exitosamente`
+      });
+
+      loadUsers();
+    } catch (error) {
+      console.error('Error al cambiar estado del usuario:', error);
+      setMessage({
+        type: 'error',
+        text: '❌ Error al cambiar estado del usuario'
+      });
+    }
+  };
+
+  const handleToggleVehicleStatus = async (vehiculoId) => {
+    console.log('🔧 Intentando cambiar estado del vehículo:', vehiculoId);
+
+    const vehiculo = vehiculos.find(v => v.id === vehiculoId);
+    console.log('📋 Vehículo encontrado:', vehiculo);
+
+    if (!vehiculo) {
+      console.error('❌ No se encontró el vehículo con ID:', vehiculoId);
+      setMessage({
+        type: 'error',
+        text: '❌ No se encontró el vehículo'
+      });
+      return;
+    }
+
+    // Determinar el nuevo estado (invertir el actual)
+    const estaDeshabilitado = vehiculo.habilitado === false;
+    const habilitarVehiculo = estaDeshabilitado; // Si está deshabilitado, lo habilitamos
+
+    console.log('🔄 Estado actual:', estaDeshabilitado ? 'deshabilitado' : 'habilitado');
+    console.log('🔄 Nuevo estado será:', habilitarVehiculo ? 'habilitado' : 'deshabilitado');
+
+    try {
+      const vehiculoRef = databaseRef(database, `vehiculos/${vehiculoId}`);
+
+      if (habilitarVehiculo) {
+        // HABILITAR vehículo
+        await update(vehiculoRef, {
+          habilitado: true,
+          estado: vehiculo.estadoAnterior || 'disponible',
+          estadoAnterior: null,
+          fechaDeshabilitado: null,
+          motivoDeshabilitado: '',
+          deshabilitadoPor: null,
+          ultimaActualizacion: new Date().toISOString(),
+          actualizadoPor: currentUser.uid
+        });
+
+        console.log('✅ Vehículo habilitado exitosamente');
+      } else {
+        // DESHABILITAR vehículo
+        await update(vehiculoRef, {
+          habilitado: false,
+          estadoAnterior: vehiculo.estado,
+          estado: 'fuera_servicio',
+          fechaDeshabilitado: new Date().toISOString(),
+          motivoDeshabilitado: 'Deshabilitado por administrador',
+          deshabilitadoPor: currentUser.uid,
+          operadorAsignado: null,
+          ultimaActualizacion: new Date().toISOString(),
+          actualizadoPor: currentUser.uid
+        });
+
+        console.log('🚫 Vehículo deshabilitado exitosamente');
+      }
+
+      setMessage({
+        type: 'success',
+        text: `✅ Vehículo ${habilitarVehiculo ? 'habilitado' : 'deshabilitado'} exitosamente`
+      });
+
+    } catch (error) {
+      console.error('❌ Error al cambiar estado del vehículo:', error);
+      setMessage({
+        type: 'error',
+        text: `❌ Error al cambiar estado del vehículo: ${error.message}`
+      });
     }
   };
 
@@ -4502,10 +4624,26 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                       <h2 style={{ margin: 0, color: '#1f2937', fontSize: '20px' }}>
                         📋 Lista de Usuarios
                       </h2>
+                      {isMobile && (
+                        <p style={{
+                          margin: '5px 0 0 0',
+                          fontSize: '12px',
+                          color: '#6b7280'
+                        }}>
+                          ← Desliza para ver más →
+                        </p>
+                      )}
                     </div>
 
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <div style={{
+                      overflowX: 'auto',
+                      WebkitOverflowScrolling: 'touch' // Para scroll suave en iOS
+                    }}>
+                      <table style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        minWidth: isMobile ? '700px' : '100%' // Ancho mínimo para móvil
+                      }}>
                         <thead>
                           <tr style={{ background: '#f9fafb' }}>
                             <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
@@ -4549,9 +4687,27 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                             }
 
                             return (
-                              <tr key={user.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                              <tr key={user.id} style={{
+                                borderBottom: '1px solid #e5e7eb',
+                                background: user.habilitado === false ? '#fef2f2' : 'transparent',
+                                opacity: user.habilitado === false ? 0.7 : 1
+                              }}>
                                 <td style={{ padding: '16px 20px', fontSize: '14px', color: '#1f2937' }}>
-                                  {user.name}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {user.name}
+                                    {user.habilitado === false && (
+                                      <span style={{
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        fontSize: '10px',
+                                        fontWeight: '600',
+                                        background: '#ef4444',
+                                        color: 'white'
+                                      }}>
+                                        DESHABILITADO
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
                                   {user.email}
@@ -4564,16 +4720,16 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                     fontWeight: '500',
                                     background: user.role === 'superadmin' ? '#ede9fe' :
                                       user.role === 'admin' ? '#dbeafe' :
-                                        user.role === 'monitor' ? '#f3f4f6' :  // AGREGAR ESTA LÍNEA
+                                        user.role === 'monitor' ? '#f3f4f6' :
                                           user.role === 'junta_vecinos' ? '#fef3c7' : '#dcfce7',
                                     color: user.role === 'superadmin' ? '#6b21a8' :
                                       user.role === 'admin' ? '#1e40af' :
-                                        user.role === 'monitor' ? '#374151' :  // AGREGAR ESTA LÍNEA
+                                        user.role === 'monitor' ? '#374151' :
                                           user.role === 'junta_vecinos' ? '#92400e' : '#15803d'
                                   }}>
                                     {user.role === 'superadmin' ? '🔐 Super Admin' :
                                       user.role === 'admin' ? '👨‍💼 Admin' :
-                                        user.role === 'monitor' ? '📊 Monitor' :  // AGREGAR ESTA LÍNEA
+                                        user.role === 'monitor' ? '📊 Monitor' :
                                           user.role === 'junta_vecinos' ? '🏘️ Junta Vecinos' : '👷 Trabajador'}
                                   </span>
                                 </td>
@@ -4656,50 +4812,104 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                 <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
                                   {user.phone || '-'}
                                 </td>
-                                <td style={{ padding: '16px 20px', textAlign: 'center' }}>
+                                <td style={{
+                                  padding: isMobile ? '12px 10px' : '16px 20px',
+                                  textAlign: 'center'
+                                }}>
                                   {user.id !== currentUser.uid ? (
-                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                    <div style={{
+                                      display: 'flex',
+                                      gap: isMobile ? '4px' : '8px',
+                                      justifyContent: 'center',
+                                      flexWrap: isMobile ? 'wrap' : 'nowrap'
+                                    }}>
+                                      {/* Botón de habilitar/deshabilitar */}
+                                      <button
+                                        onClick={() => handleToggleUserStatus(user.id, user.email)}
+                                        style={{
+                                          padding: isMobile ? '5px 8px' : '6px 12px',
+                                          background: user.habilitado !== false ? '#f59e0b' : '#22c55e',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          fontSize: isMobile ? '11px' : '12px',
+                                          cursor: 'pointer',
+                                          whiteSpace: 'nowrap'
+                                        }}
+                                        title={user.habilitado !== false ? 'Deshabilitar usuario' : 'Habilitar usuario'}
+                                      >
+                                        {isMobile ?
+                                          (user.habilitado !== false ? '🚫' : '✅') :
+                                          (user.habilitado !== false ? '🚫 Deshabilitar' : '✅ Habilitar')
+                                        }
+                                      </button>
+
                                       <button
                                         onClick={() => handleEditUser(user)}
                                         style={{
-                                          padding: '6px 12px',
+                                          padding: isMobile ? '5px 8px' : '6px 12px',
                                           background: '#3b82f6',
                                           color: 'white',
                                           border: 'none',
                                           borderRadius: '4px',
-                                          fontSize: '12px',
-                                          cursor: 'pointer'
+                                          fontSize: isMobile ? '11px' : '12px',
+                                          cursor: 'pointer',
+                                          whiteSpace: 'nowrap'
                                         }}
                                       >
-                                        ✏️ Editar
+                                        {isMobile ? '✏️' : '✏️ Editar'}
                                       </button>
-                                      <button
-                                        onClick={() => handleDeleteUser(user.id)}
-                                        style={{
-                                          padding: '6px 12px',
-                                          background: '#ef4444',
-                                          color: 'white',
-                                          border: 'none',
-                                          borderRadius: '4px',
-                                          fontSize: '12px',
-                                          cursor: 'pointer'
-                                        }}
-                                      >
-                                        🗑️ Eliminar
-                                      </button>
+
+                                      {/* Solo mostrar eliminar si está deshabilitado */}
+                                      {user.habilitado === false ? (
+                                        <button
+                                          onClick={() => handleDeleteUser(user.id)}
+                                          style={{
+                                            padding: isMobile ? '5px 8px' : '6px 12px',
+                                            background: '#ef4444',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            fontSize: isMobile ? '11px' : '12px',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap'
+                                          }}
+                                        >
+                                          {isMobile ? '🗑️' : '🗑️ Eliminar'}
+                                        </button>
+                                      ) : (
+                                        <button
+                                          disabled
+                                          style={{
+                                            padding: isMobile ? '5px 8px' : '6px 12px',
+                                            background: '#d1d5db',
+                                            color: '#9ca3af',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            fontSize: isMobile ? '11px' : '12px',
+                                            cursor: 'not-allowed',
+                                            whiteSpace: 'nowrap'
+                                          }}
+                                          title="Deshabilitar usuario primero para eliminar"
+                                        >
+                                          {isMobile ? '🗑️' : '🗑️ Eliminar'}
+                                        </button>
+                                      )}
+
                                       <button
                                         onClick={() => handleExportSingleUserPDF(user)}
                                         style={{
-                                          padding: '6px 12px',
-                                          background: '#ef4444',
+                                          padding: isMobile ? '5px 8px' : '6px 12px',
+                                          background: '#10b981',
                                           color: 'white',
                                           border: 'none',
                                           borderRadius: '4px',
-                                          fontSize: '12px',
-                                          cursor: 'pointer'
+                                          fontSize: isMobile ? '11px' : '12px',
+                                          cursor: 'pointer',
+                                          whiteSpace: 'nowrap'
                                         }}
                                       >
-                                        📕 Exportar
+                                        {isMobile ? '📄' : '📄 Exportar'}
                                       </button>
                                     </div>
                                   ) : (
@@ -7821,6 +8031,24 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                               </td>
                               <td style={{ padding: '16px 20px', textAlign: 'center' }}>
                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                  {/* Botón de habilitar/deshabilitar */}
+                                  <button
+                                    onClick={() => handleToggleVehicleStatus(vehiculo.id)}
+                                    style={{
+                                      padding: '6px 12px',
+                                      background: vehiculo.habilitado !== false ? '#f59e0b' : '#22c55e',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      cursor: 'pointer'
+                                    }}
+                                    title={vehiculo.habilitado !== false ? 'Deshabilitar vehículo' : 'Habilitar vehículo'}
+                                  >
+                                    {vehiculo.habilitado !== false ? '🚫 Deshabilitar' : '✅ Habilitar'}
+                                  </button>
+
+                                  {/* Botón de editar */}
                                   <button
                                     onClick={() => handleEditVehicle(vehiculo)}
                                     style={{
@@ -7835,22 +8063,40 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                   >
                                     ✏️ Editar
                                   </button>
-                                  <button
-                                    onClick={() => handleDeleteVehicle(vehiculo.id)}
-                                    style={{
-                                      padding: '6px 12px',
-                                      background: '#ef4444',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '4px',
-                                      fontSize: '12px',
-                                      cursor: 'pointer'
-                                    }}
-                                  >
-                                    🗑️
-                                  </button>
 
-
+                                  {/* Botón de eliminar (solo si está deshabilitado) */}
+                                  {vehiculo.habilitado === false ? (
+                                    <button
+                                      onClick={() => handleDeleteVehicle(vehiculo.id)}
+                                      style={{
+                                        padding: '6px 12px',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      🗑️ Eliminar
+                                    </button>
+                                  ) : (
+                                    <button
+                                      disabled
+                                      style={{
+                                        padding: '6px 12px',
+                                        background: '#d1d5db',
+                                        color: '#9ca3af',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        cursor: 'not-allowed'
+                                      }}
+                                      title="Deshabilitar vehículo primero para eliminar"
+                                    >
+                                      🗑️ Eliminar
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>

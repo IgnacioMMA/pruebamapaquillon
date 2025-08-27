@@ -66,17 +66,24 @@ const Login = ({ onLogin }) => {
         const userFirestoreData = userDoc.data();
         const userDocId = userDoc.id;
 
+        // NUEVA VALIDACIÓN: Verificar si el usuario está habilitado
+        if (userFirestoreData.habilitado === false) {
+          setError('🚫 Tu cuenta ha sido deshabilitada. Contacta al administrador del sistema.');
+          setLoading(false);
+          return;
+        }
+
         // Verificar si hay contraseña temporal
         if (userFirestoreData.tempPassword) {
           try {
             const tempPasswordDecoded = atob(userFirestoreData.tempPassword);
-            
+
             if (password === tempPasswordDecoded) {
               // Login exitoso con contraseña temporal
               await updateDoc(doc(firestore, 'users', userDocId), {
                 lastLogin: new Date().toISOString()
               });
-              
+
               if (userFirestoreData.requirePasswordChange === true) {
                 setCurrentUser({
                   uid: userDocId,
@@ -118,6 +125,15 @@ const Login = ({ onLogin }) => {
         if (userDoc.exists()) {
           const userData = userDoc.data();
 
+          // NUEVA VALIDACIÓN: Verificar si el usuario está habilitado (Firebase Auth)
+          if (userData.habilitado === false) {
+            // Cerrar sesión inmediatamente
+            await signOut(auth);
+            setError('🚫 Tu cuenta ha sido deshabilitada. Contacta al administrador del sistema.');
+            setLoading(false);
+            return;
+          }
+
           if (userData.requirePasswordChange || userData.firstLogin !== false) {
             if (userData.tempPassword) {
               await updateDoc(doc(firestore, 'users', user.uid), {
@@ -157,22 +173,29 @@ const Login = ({ onLogin }) => {
           const usersRef = collection(firestore, 'users');
           const q = query(usersRef, where('email', '==', normalizedEmail));
           const querySnapshot = await getDocs(q);
-          
+
           if (!querySnapshot.empty) {
             const userDoc = querySnapshot.docs[0];
             const userFirestoreData = userDoc.data();
             const userDocId = userDoc.id;
-            
+
+            // NUEVA VALIDACIÓN: Verificar si está habilitado en el fallback
+            if (userFirestoreData.habilitado === false) {
+              setError('🚫 Tu cuenta ha sido deshabilitada. Contacta al administrador del sistema.');
+              setLoading(false);
+              return;
+            }
+
             if (userFirestoreData.tempPassword) {
               try {
                 const storedPassword = atob(userFirestoreData.tempPassword);
-                
+
                 if (password === storedPassword) {
                   if (userFirestoreData.needsAuthSync === true) {
                     try {
                       await createUserWithEmailAndPassword(auth, normalizedEmail, password);
                       const firebaseUser = auth.currentUser;
-                      
+
                       if (firebaseUser && firebaseUser.uid !== userDocId) {
                         await setDoc(doc(firestore, 'users', firebaseUser.uid), {
                           ...userFirestoreData,
@@ -182,9 +205,9 @@ const Login = ({ onLogin }) => {
                           requirePasswordChange: false,
                           lastLogin: new Date().toISOString()
                         });
-                        
+
                         await signOut(auth);
-                        
+
                         onLogin({
                           uid: firebaseUser.uid,
                           email: userFirestoreData.email,
@@ -201,11 +224,11 @@ const Login = ({ onLogin }) => {
                           requirePasswordChange: false,
                           lastLogin: new Date().toISOString()
                         });
-                        
+
                         if (auth.currentUser) {
                           await signOut(auth);
                         }
-                        
+
                         onLogin({
                           uid: userDocId,
                           email: userFirestoreData.email,
@@ -219,7 +242,7 @@ const Login = ({ onLogin }) => {
                       await updateDoc(doc(firestore, 'users', userDocId), {
                         lastLogin: new Date().toISOString()
                       });
-                      
+
                       onLogin({
                         uid: userDocId,
                         email: userFirestoreData.email,
@@ -233,7 +256,7 @@ const Login = ({ onLogin }) => {
                     await updateDoc(doc(firestore, 'users', userDocId), {
                       lastLogin: new Date().toISOString()
                     });
-                    
+
                     onLogin({
                       uid: userDocId,
                       email: userFirestoreData.email,
@@ -243,7 +266,7 @@ const Login = ({ onLogin }) => {
                       requirePasswordChange: false
                     });
                   }
-                  
+
                   setLoading(false);
                   return;
                 }
@@ -253,7 +276,7 @@ const Login = ({ onLogin }) => {
             }
           }
         }
-        
+
         throw authError;
       }
     } catch (error) {
@@ -304,7 +327,7 @@ const Login = ({ onLogin }) => {
 
     const hasNumber = /\d/.test(newPassword);
     const hasLetter = /[a-zA-Z]/.test(newPassword);
-    
+
     if (!hasNumber || !hasLetter) {
       setError('La contraseña debe contener al menos una letra y un número');
       return;
@@ -316,17 +339,17 @@ const Login = ({ onLogin }) => {
     try {
       if (currentUser.isTempPasswordLogin) {
         let authUpdated = false;
-        
+
         try {
           await createUserWithEmailAndPassword(auth, currentUser.email, newPassword);
           authUpdated = true;
-          
+
           const firebaseUser = auth.currentUser;
           if (firebaseUser) {
             if (currentUser.uid !== firebaseUser.uid) {
               const oldUserDoc = await getDoc(doc(firestore, 'users', currentUser.uid));
               const oldUserData = oldUserDoc.exists() ? oldUserDoc.data() : {};
-              
+
               await setDoc(doc(firestore, 'users', firebaseUser.uid), {
                 ...oldUserData,
                 email: currentUser.email,
@@ -338,7 +361,7 @@ const Login = ({ onLogin }) => {
                 resetMethod: null,
                 authPasswordSynced: true
               });
-              
+
               currentUser.uid = firebaseUser.uid;
             } else {
               await updateDoc(doc(firestore, 'users', currentUser.uid), {
@@ -351,7 +374,7 @@ const Login = ({ onLogin }) => {
                 authPasswordSynced: true
               });
             }
-            
+
             await signOut(auth);
           }
         } catch (createError) {
@@ -367,7 +390,7 @@ const Login = ({ onLogin }) => {
                 // No funcionó con última temporal
               }
             }
-            
+
             if (!authUpdated) {
               try {
                 await signInWithEmailAndPassword(auth, currentUser.email, oldPassword);
@@ -378,7 +401,7 @@ const Login = ({ onLogin }) => {
                 // No funcionó con temporal actual
               }
             }
-            
+
             if (!authUpdated) {
               await updateDoc(doc(firestore, 'users', currentUser.uid), {
                 tempPassword: btoa(newPassword),
@@ -390,13 +413,13 @@ const Login = ({ onLogin }) => {
                 authPasswordSynced: false,
                 needsAuthSync: true
               });
-              
+
               setSuccessMessage('✅ Contraseña actualizada correctamente. Redirigiendo...');
-              
+
               setTimeout(() => {
                 window.location.reload();
               }, 3000);
-              
+
               return;
             }
           } else {
@@ -407,7 +430,7 @@ const Login = ({ onLogin }) => {
         if (authUpdated) {
           const userDocRef = doc(firestore, 'users', currentUser.uid);
           const userDocSnap = await getDoc(userDocRef);
-          
+
           if (userDocSnap.exists()) {
             await updateDoc(userDocRef, {
               requirePasswordChange: false,
@@ -436,20 +459,20 @@ const Login = ({ onLogin }) => {
           }
 
           setSuccessMessage('✅ Contraseña actualizada exitosamente');
-          
+
           setTimeout(async () => {
             try {
               if (auth.currentUser) {
                 await signOut(auth);
                 await new Promise(resolve => setTimeout(resolve, 500));
               }
-              
+
               const userCredential = await signInWithEmailAndPassword(auth, currentUser.email, newPassword);
               const user = userCredential.user;
-              
+
               const userDocRef = doc(firestore, 'users', user.uid);
               const userDocSnap = await getDoc(userDocRef);
-              
+
               if (userDocSnap.exists()) {
                 const userData = userDocSnap.data();
                 onLogin({
@@ -497,7 +520,7 @@ const Login = ({ onLogin }) => {
           });
 
           setSuccessMessage('✅ Contraseña actualizada exitosamente');
-          
+
           setTimeout(() => {
             onLogin({
               ...currentUser,
@@ -844,8 +867,8 @@ const Login = ({ onLogin }) => {
                 backgroundPosition: 'center'
               }}>
                 {/* Si no hay imagen, mostrar texto de respaldo */}
-                <div style={{ 
-                  fontSize: '12px', 
+                <div style={{
+                  fontSize: '12px',
                   color: colors.text,
                   paddingTop: '20px'
                 }}>

@@ -358,9 +358,25 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
     setLoading(true);
 
     try {
-      // Definir las variables al inicio del try para que estén disponibles en todo el scope
       const vehiculo = vehiculos.find(v => v.id === vehiculoId);
       const trabajador = nuevoOperadorId ? trabajadores.find(t => t.id === nuevoOperadorId) : null;
+      // Verificar si el vehículo está habilitado
+      if (vehiculo?.habilitado === false) {
+        setMessage({
+          type: 'error',
+          text: '❌ Este vehículo está deshabilitado. No se puede asignar operador.'
+        });
+        setLoading(false);
+        return;
+      }
+      if (trabajador?.habilitado === false) {
+        setMessage({
+          type: 'error',
+          text: '❌ Este trabajador está deshabilitado. No puede ser asignado a vehículos.'
+        });
+        setLoading(false);
+        return;
+      }
 
       // NUEVA VALIDACIÓN: Verificar licencias requeridas
       if (nuevoOperadorId) {
@@ -466,6 +482,7 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
       setLoading(false);
     }
   };
+
 
   // Abrir modal de edición
   const openEditModal = (item, type) => {
@@ -2372,15 +2389,19 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
 
         {/* Lista de Vehículos */}
         {activeTab === 'vehicles' && (
+
           <div style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))',
             gap: '20px'
           }}>
+
             {filteredVehiculos.map(vehiculo => {
               const operador = users.find(u => u.id === vehiculo.operadorAsignado);
               const isExpanded = expandedCards[vehiculo.id];
               const isEditingOperator = quickEditMode[vehiculo.id];
+              const isDisabled = vehiculo.habilitado === false; // AGREGAR ESTA LÍNEA
+
 
               return (
                 <div key={vehiculo.id} style={{
@@ -2389,16 +2410,32 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
                   boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
                   overflow: 'hidden',
                   transition: 'all 0.3s ease',
-                  border: vehiculo.estado === 'en_uso' ? '2px solid #3b82f6' : '1px solid #e5e7eb'
+                  border: isDisabled ? '2px solid #ef4444' :
+                    vehiculo.estado === 'en_uso' ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                  opacity: isDisabled ? 0.6 : 1
                 }}>
                   {/* Header de la tarjeta */}
                   <div style={{
                     padding: '15px 20px',
-                    background: vehiculo.estado === 'disponible' ? '#dcfce7' :
-                      vehiculo.estado === 'en_uso' ? '#dbeafe' :
-                        vehiculo.estado === 'mantenimiento' ? '#fef3c7' : '#fee2e2',
+                    background: isDisabled ? '#fee2e2' :
+                      vehiculo.estado === 'disponible' ? '#dcfce7' :
+                        vehiculo.estado === 'en_uso' ? '#dbeafe' :
+                          vehiculo.estado === 'mantenimiento' ? '#fef3c7' : '#fee2e2',
                     borderBottom: '1px solid #e5e7eb'
                   }}>
+                    {isDisabled && (
+                      <div style={{
+                        background: '#ef4444',
+                        color: 'white',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        marginBottom: '10px'
+                      }}>
+                        🚫 VEHÍCULO BLOQUEADO
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
                         {vehiculo.tipo === 'maquinaria' ? '🏗️' : '🚗'} {vehiculo.nombre}

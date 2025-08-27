@@ -37,18 +37,65 @@ function App() {
     }, 5000); // 5 segundos máximo de espera
 
     // Función para verificar localStorage
-    const checkLocalStorage = async () => {
-      console.log('📦 Verificando localStorage...');
+  const checkLocalStorage = async () => {
+  console.log('📦 Verificando localStorage...');
 
-      const isAuthenticated = localStorage.getItem('isAuthenticated');
-      const storedUserData = localStorage.getItem('userData');
+  const isAuthenticated = localStorage.getItem('isAuthenticated');
+  const storedUserData = localStorage.getItem('userData');
 
-      if (isAuthenticated === 'true' && storedUserData) {
-        try {
-          const userData = JSON.parse(storedUserData);
-          console.log('✅ Usuario encontrado en localStorage:', userData.email);
+  if (isAuthenticated === 'true' && storedUserData) {
+    try {
+      const userData = JSON.parse(storedUserData);
+      console.log('✅ Usuario encontrado en localStorage:', userData.email);
+      
+      // Verificar datos en Firestore (sin bloquear)
+      try {
+        const userDoc = await getDoc(doc(firestore, 'users', userData.uid));
+        if (userDoc.exists()) {
+          const freshData = userDoc.data();
+          
+          // NUEVA VALIDACIÓN: Verificar si el usuario está habilitado
+          if (freshData.habilitado === false) {
+            console.log('🚫 Usuario deshabilitado - limpiando sesión');
+            localStorage.removeItem('isAuthenticated');
+            localStorage.removeItem('userData');
+            localStorage.removeItem('currentView');
+            setUser(null);
+            return;
+          }
+          
+          const updatedUser = {
+            uid: userData.uid,
+            email: userData.email,
+            role: freshData.role,
+            name: freshData.name,
+            localidad: freshData.localidad,
+            ...freshData
+          };
+          setUser(updatedUser);
+          localStorage.setItem('userData', JSON.stringify(updatedUser));
+          console.log('✅ Datos actualizados desde Firestore');
+          
+          // Establecer vista según el rol
+          const savedView = localStorage.getItem('currentView');
+          if (savedView) {
+            setCurrentView(savedView);
+          } else {
+            if (updatedUser.role === 'superadmin') {
+              setCurrentView('admin');
+            } else if (updatedUser.role === 'admin') {
+              setCurrentView('dashboard');
+            } else if (updatedUser.role === 'junta_vecinos') {
+              setCurrentView('junta_vecinos');
+            } else if (updatedUser.role === 'trabajador') {
+              setTrabajadorView('gps');
+            }
+          }
+        } else {
+          // Si no existe en Firestore, usar datos de localStorage pero marcar como precaución
+          console.log('⚠️ Usuario no encontrado en Firestore, usando localStorage');
           setUser(userData);
-
+          
           // Establecer vista según el rol
           const savedView = localStorage.getItem('currentView');
           if (savedView) {
@@ -64,37 +111,38 @@ function App() {
               setTrabajadorView('gps');
             }
           }
-
-          // Verificar datos en Firestore (sin bloquear)
-          try {
-            const userDoc = await getDoc(doc(firestore, 'users', userData.uid));
-            if (userDoc.exists()) {
-              const freshData = userDoc.data();
-              const updatedUser = {
-                uid: userData.uid,
-                email: userData.email,
-                role: freshData.role,
-                name: freshData.name,
-                localidad: freshData.localidad,
-                ...freshData
-              };
-              setUser(updatedUser);
-              localStorage.setItem('userData', JSON.stringify(updatedUser));
-              console.log('✅ Datos actualizados desde Firestore');
-            }
-          } catch (error) {
-            console.error('⚠️ Error verificando Firestore (no crítico):', error);
-            // No es crítico, continuamos con los datos de localStorage
-          }
-        } catch (e) {
-          console.error('❌ Error parseando localStorage:', e);
-          localStorage.removeItem('isAuthenticated');
-          localStorage.removeItem('userData');
         }
-      } else {
-        console.log('📭 No hay sesión en localStorage');
+      } catch (error) {
+        console.error('⚠️ Error verificando Firestore (no crítico):', error);
+        // No es crítico, continuamos con los datos de localStorage
+        setUser(userData);
+        
+        // Establecer vista según el rol
+        const savedView = localStorage.getItem('currentView');
+        if (savedView) {
+          setCurrentView(savedView);
+        } else {
+          if (userData.role === 'superadmin') {
+            setCurrentView('admin');
+          } else if (userData.role === 'admin') {
+            setCurrentView('dashboard');
+          } else if (userData.role === 'junta_vecinos') {
+            setCurrentView('junta_vecinos');
+          } else if (userData.role === 'trabajador') {
+            setTrabajadorView('gps');
+          }
+        }
       }
-    };
+    } catch (e) {
+      console.error('❌ Error parseando localStorage:', e);
+      localStorage.removeItem('isAuthenticated');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('currentView');
+    }
+  } else {
+    console.log('📭 No hay sesión en localStorage');
+  }
+};
 
     // Ejecutar verificación de localStorage inmediatamente
     checkLocalStorage();

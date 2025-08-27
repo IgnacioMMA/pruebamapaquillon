@@ -4,11 +4,11 @@ import { database } from '../config/firebase';
 import { ref as databaseRef, push, update, remove, onValue, off } from 'firebase/database';
 import { Package, Plus, Trash2, Edit2, DollarSign, Search } from 'lucide-react';
 
-const ServiceCatalogManager = ({ 
-    show, 
-    onClose, 
+const ServiceCatalogManager = ({
+    show,
+    onClose,
     isMobile,
-    currentUser 
+    currentUser
 }) => {
     const [servicios, setServicios] = useState([]);
     const [filteredServicios, setFilteredServicios] = useState([]);
@@ -16,7 +16,7 @@ const ServiceCatalogManager = ({
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [message, setMessage] = useState({ type: '', text: '' });
-    
+
     // Estado del formulario
     const [formData, setFormData] = useState({
         codigo: '',
@@ -25,7 +25,7 @@ const ServiceCatalogManager = ({
         manoObra: 0,
         repuestos: []
     });
-    
+
     const [newRepuesto, setNewRepuesto] = useState({
         nombre: '',
         cantidad: 1,
@@ -50,7 +50,7 @@ const ServiceCatalogManager = ({
                     setFilteredServicios([]);
                 }
             });
-            
+
             return () => off(serviciosRef);
         }
     }, [show]);
@@ -101,12 +101,12 @@ const ServiceCatalogManager = ({
 
     // Calcular total del servicio
     const calcularTotalServicio = () => {
-        const totalRepuestos = formData.repuestos.reduce((total, rep) => 
+        const totalRepuestos = formData.repuestos.reduce((total, rep) =>
             total + (rep.cantidad * rep.costoUnitario), 0);
         const iva = Math.round(totalRepuestos * 0.19);
         const totalConIva = totalRepuestos + iva;
         const total = totalConIva + (formData.manoObra || 0);
-        
+
         return {
             repuestosNeto: totalRepuestos,
             iva,
@@ -118,7 +118,7 @@ const ServiceCatalogManager = ({
     // Guardar servicio
     const handleSaveServicio = async (e) => {
         e.preventDefault();
-        
+
         if (!formData.codigo || !formData.descripcion) {
             setMessage({
                 type: 'error',
@@ -128,6 +128,8 @@ const ServiceCatalogManager = ({
         }
 
         try {
+            const now = new Date().toISOString();
+
             const servicioData = {
                 codigo: formData.codigo.toUpperCase(),
                 descripcion: formData.descripcion,
@@ -135,12 +137,11 @@ const ServiceCatalogManager = ({
                 manoObra: parseFloat(formData.manoObra) || 0,
                 repuestos: formData.repuestos,
                 createdBy: currentUser.uid,
-                createdAt: editingId ? undefined : new Date().toISOString(),
-                updatedAt: editingId ? new Date().toISOString() : undefined
+                updatedAt: now // Always set updatedAt
             };
 
             if (editingId) {
-                // Actualizar servicio existente
+                // Actualizar servicio existente - no incluir createdAt
                 const servicioRef = databaseRef(database, `catalogo_servicios/${editingId}`);
                 await update(servicioRef, servicioData);
                 setMessage({
@@ -148,7 +149,8 @@ const ServiceCatalogManager = ({
                     text: '✅ Servicio actualizado exitosamente'
                 });
             } else {
-                // Crear nuevo servicio
+                // Crear nuevo servicio - incluir createdAt
+                servicioData.createdAt = now;
                 const serviciosRef = databaseRef(database, 'catalogo_servicios');
                 await push(serviciosRef, servicioData);
                 setMessage({
@@ -580,7 +582,7 @@ const ServiceCatalogManager = ({
                                                     fontSize: '13px'
                                                 }}>
                                                     <span>
-                                                        {repuesto.cantidad}x {repuesto.nombre} - 
+                                                        {repuesto.cantidad}x {repuesto.nombre} -
                                                         ${(repuesto.cantidad * repuesto.costoUnitario).toLocaleString()}
                                                     </span>
                                                     <button
@@ -715,7 +717,7 @@ const ServiceCatalogManager = ({
                                 }}>
                                     {filteredServicios.map(servicio => {
                                         const totales = (() => {
-                                            const repuestosNeto = servicio.repuestos?.reduce((total, rep) => 
+                                            const repuestosNeto = servicio.repuestos?.reduce((total, rep) =>
                                                 total + (rep.cantidad * rep.costoUnitario), 0) || 0;
                                             const iva = Math.round(repuestosNeto * 0.19);
                                             const totalConIva = repuestosNeto + iva;
@@ -766,7 +768,7 @@ const ServiceCatalogManager = ({
                                                             {servicio.tipoServicio}
                                                         </span>
                                                     </div>
-                                                    
+
                                                     <div style={{
                                                         display: 'flex',
                                                         gap: '20px',

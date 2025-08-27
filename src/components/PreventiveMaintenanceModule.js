@@ -47,35 +47,60 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
   const [horaSolicitud, setHoraSolicitud] = useState(new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }));
 
   // Estado para servicios preventivos
-  const [serviciosPreventivos, setServiciosPreventivos] = useState([{
-    id: Date.now(),
-    numero: 1,
-    servicio: '',
-    codigo: '',
-    detalle: '',
-    manoObra: 0,
-    costoRepuesto: 0,
-    cantidadRepuesto: 1,
-    repuestoDescripcion: '',
-    iva: 0  // Agregar campo IVA para cada servicio
+  const [serviciosPreventivos, setServiciosPreventivos] = useState([]);
+  const [catalogoServicios, setCatalogoServicios] = useState([]);
+  const [catalogSearchTerm, setCatalogSearchTerm] = useState('');
 
-  }]);
   const [montoIVA, setMontoIVA] = useState(0);
   const calcularTotales = useCallback(() => {
-    const subtotalManoObra = serviciosPreventivos.reduce((sum, s) => sum + (parseFloat(s.manoObra) || 0), 0);
-    const subtotalRepuestos = serviciosPreventivos.reduce((sum, s) => sum + ((parseFloat(s.costoRepuesto) || 0) * (parseInt(s.cantidadRepuesto) || 1)), 0);
-    const repuestosConIVA = Math.round(subtotalRepuestos * 1.19); // Repuestos × 1.19
-    const iva = Math.round(subtotalRepuestos * 0.19); // IVA de repuestos
-    const total = subtotalManoObra + repuestosConIVA; // Mano de obra + Repuestos con IVA
+    let subtotalManoObra = 0;
+    let subtotalRepuestos = 0;
+    let totalIVA = 0;
+    serviciosPreventivos.forEach(servicio => {
+      // Si es un servicio del catálogo (tiene totalServicio)
+      if (servicio.totalServicio) {
+        subtotalManoObra += servicio.totales.manoObra || 0;
+        subtotalRepuestos += servicio.totales.repuestosNeto || 0;
+        totalIVA += servicio.totales.iva || 0;
+      }
+      // Si es un servicio manual antiguo (estructura anterior)
+      else {
+        subtotalManoObra += parseFloat(servicio.manoObra) || 0;
+        const repuestoTotal = (parseFloat(servicio.costoRepuesto) || 0) * (parseInt(servicio.cantidadRepuesto) || 1);
+        subtotalRepuestos += repuestoTotal;
+        totalIVA += Math.round(repuestoTotal * 0.19);
+      }
+    });
+
+    const valorNeto = subtotalManoObra + subtotalRepuestos;
+    const total = subtotalManoObra + subtotalRepuestos + totalIVA;
 
     return {
       subtotalManoObra,
       subtotalRepuestos,
-      valorNeto: subtotalManoObra + subtotalRepuestos,
-      iva,
+      valorNeto,
+      iva: totalIVA,
       total
     };
   }, [serviciosPreventivos]);
+  // Add this function to your PreventiveMaintenanceModule component
+  // Place it near the other calculation functions
+
+  const calcularTotalesServicioCatalogo = useCallback((servicio) => {
+    const manoObra = parseFloat(servicio.manoObra) || 0;
+    const totalRepuestos = servicio.repuestos?.reduce((sum, repuesto) => {
+      return sum + (repuesto.cantidad * repuesto.costoUnitario);
+    }, 0) || 0;
+    const iva = Math.round(totalRepuestos * 0.19);
+    const total = manoObra + totalRepuestos + iva;
+
+    return {
+      manoObra,
+      totalRepuestos,
+      iva,
+      total
+    };
+  }, []);
 
   // Cargar registros de mantenimiento
   useEffect(() => {
@@ -95,6 +120,63 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
 
     return () => off(maintenanceRef);
   }, []);
+  useEffect(() => {
+    const catalogoRef = databaseRef(database, 'catalogo_servicios');
+    onValue(catalogoRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const serviciosArray = Object.entries(data).map(([id, servicio]) => ({
+          id,
+          ...servicio
+        }));
+        setCatalogoServicios(serviciosArray);
+      }
+    });
+  }, []);
+
+  // Filtrar servicios del catálogo
+  const getFilteredCatalogServices = () => {
+    if (!catalogSearchTerm) return catalogoServicios;
+
+    const searchLower = catalogSearchTerm.toLowerCase();
+    return catalogoServicios.filter(servicio =>
+      servicio.codigo.toLowerCase().includes(searchLower) ||
+      servicio.descripcion.toLowerCase().includes(searchLower)
+    );
+  };
+
+  // Agregar servicio del catálogo
+  const agregarServicioDeCatalogo = (servicio) => {
+    const cantidadInput = document.getElementById(`cantidad-${servicio.id}`);
+    const cantidad = parseInt(cantidadInput?.value) || 1;
+
+    const totalRepuestos = (servicio.repuestos?.reduce((sum, rep) =>
+      sum + (rep.cantidad * rep.costoUnitario), 0) || 0) * cantidad;
+    const iva = Math.round(totalRepuestos * 0.19);
+    const manoObraTotal = (servicio.manoObra || 0) * cantidad;
+    const totalServicio = manoObraTotal + totalRepuestos + iva;
+
+    const nuevoServicio = {
+      id: Date.now(),
+      catalogoId: servicio.id,
+      codigo: servicio.codigo,
+      descripcion: servicio.descripcion,
+      manoObra: servicio.manoObra || 0,
+      repuestos: servicio.repuestos || [],
+      cantidadServicio: cantidad,
+      totalRepuestos,
+      iva,
+      totalServicio,
+      totales: {  // <-- AGREGAR ESTA ESTRUCTURA
+        manoObra: manoObraTotal,
+        repuestosNeto: totalRepuestos,
+        iva: iva,
+        total: totalServicio
+      }
+    };
+
+    setServiciosPreventivos([...serviciosPreventivos, nuevoServicio]);
+  };
 
   // Funciones auxiliares
   const agregarServicio = () => {
@@ -501,19 +583,8 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
     setCurrentStep(1);
     setFechaSolicitud(new Date().toISOString().split('T')[0]);
     setHoraSolicitud(new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }));
-    setServiciosPreventivos([{
-      id: Date.now(),
-      numero: 1,
-      servicio: '',
-      codigo: '',
-      detalle: '',
-      manoObra: 0,
-      costoRepuesto: 0,
-      cantidadRepuesto: 1,
-      repuestoDescripcion: '',
-      iva: 0
+    setServiciosPreventivos([]);
 
-    }]);
   };
 
   const totales = calcularTotales();
@@ -1171,291 +1242,315 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
             {currentStep === 2 && (
               <div style={{ animation: 'fadeIn 0.3s ease' }}>
                 <h3 style={{ marginBottom: '20px', color: '#1f2937', fontSize: '20px' }}>
-                  Detalle de servicios a presupuestar
+                  Seleccionar servicios del catálogo
                 </h3>
 
-                {serviciosPreventivos.map((servicio, index) => (
-                  <div key={servicio.id} style={{
-                    marginBottom: '20px',
-                    padding: '20px',
-                    background: '#f9fafb',
-                    borderRadius: '12px',
-                    border: '2px solid #e5e7eb'
+                {/* Selector de servicios del catálogo */}
+                <div style={{
+                  marginBottom: '20px',
+                  padding: '20px',
+                  background: '#f0f9ff',
+                  borderRadius: '12px',
+                  border: '2px solid #0ea5e9'
+                }}>
+                  <h4 style={{ margin: '0 0 15px 0', color: '#0c4a6e', fontSize: '16px' }}>
+                    📦 Buscar en el Catálogo de Servicios
+                  </h4>
+
+                  {/* Buscador con filtros */}
+                  <div style={{ marginBottom: '15px' }}>
+                    <input
+                      type="text"
+                      placeholder="🔍 Buscar por código o nombre del servicio..."
+                      value={catalogSearchTerm}
+                      onChange={(e) => setCatalogSearchTerm(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '8px',
+                        fontSize: '14px'
+                      }}
+                    />
+                  </div>
+
+                  {/* Lista de servicios del catálogo */}
+                  <div style={{
+                    maxHeight: '300px',
+                    overflowY: 'auto',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    background: 'white'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                      <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600', color: '#374151' }}>
-                        Servicio #{servicio.numero}
-                      </h4>
-                      {serviciosPreventivos.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => eliminarServicio(servicio.id)}
-                          style={{
-                            padding: '6px 12px',
-                            background: '#ef4444',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '12px',
-                            cursor: 'pointer'
-                          }}>
-                          🗑️ Eliminar
-                        </button>
-                      )}
-                    </div>
+                    {getFilteredCatalogServices().map(servicio => {
+                      const yaAgregado = serviciosPreventivos.some(s => s.catalogoId === servicio.id);
+                      const totales = calcularTotalesServicioCatalogo(servicio);
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                          Tipo de servicio
-                        </label>
-                        <input
-                          type="text"
-                          value={servicio.servicio}
-                          onChange={(e) => actualizarServicio(servicio.id, 'servicio', e.target.value)}
-                          placeholder="Ej: Cambio de aceite"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px'
-                          }}
-                        />
+                      return (
+                        <div key={servicio.id} style={{
+                          padding: '12px',
+                          borderBottom: '1px solid #f3f4f6',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          background: yaAgregado ? '#f0fdf4' : 'white',
+                          transition: 'background 0.2s'
+                        }}
+                          onMouseEnter={(e) => !yaAgregado && (e.currentTarget.style.background = '#f9fafb')}
+                          onMouseLeave={(e) => !yaAgregado && (e.currentTarget.style.background = 'white')}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                background: '#dbeafe',
+                                color: '#1e40af',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: '600'
+                              }}>
+                                {servicio.codigo}
+                              </span>
+                              <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                                {servicio.descripcion}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                              Mano de obra: ${servicio.manoObra?.toLocaleString() || 0} •
+                              {servicio.repuestos?.length || 0} repuesto(s) •
+                              Total: ${totales.total.toLocaleString()}
+                            </div>
+                          </div>
+
+                          {!yaAgregado ? (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <input
+                                type="number"
+                                min="1"
+                                defaultValue="1"
+                                id={`cantidad-${servicio.id}`}
+                                style={{
+                                  width: '60px',
+                                  padding: '6px',
+                                  border: '1px solid #d1d5db',
+                                  borderRadius: '4px',
+                                  fontSize: '14px'
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => agregarServicioDeCatalogo(servicio)}
+                                style={{
+                                  padding: '6px 16px',
+                                  background: '#22c55e',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '13px',
+                                  fontWeight: '500',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Agregar
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{
+                              padding: '6px 12px',
+                              background: '#dcfce7',
+                              color: '#15803d',
+                              borderRadius: '6px',
+                              fontSize: '13px',
+                              fontWeight: '500'
+                            }}>
+                              ✓ Agregado
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {getFilteredCatalogServices().length === 0 && (
+                      <div style={{
+                        padding: '40px',
+                        textAlign: 'center',
+                        color: '#9ca3af'
+                      }}>
+                        {catalogSearchTerm ?
+                          'No se encontraron servicios con ese criterio' :
+                          catalogoServicios.length === 0 ?
+                            'No hay servicios en el catálogo. Crea servicios usando el botón "📦 Gestionar Catálogo"' :
+                            'Ingresa un código o nombre para buscar'}
                       </div>
+                    )}
+                  </div>
+                </div>
 
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                          Código
-                        </label>
-                        <input
-                          type="text"
-                          value={servicio.codigo}
-                          onChange={(e) => actualizarServicio(servicio.id, 'codigo', e.target.value)}
-                          placeholder="Código interno"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px'
-                          }}
-                        />
+                {/* Servicios seleccionados */}
+                {serviciosPreventivos.length > 0 && (
+                  <div style={{ marginTop: '20px' }}>
+                    <h4 style={{ marginBottom: '15px', fontSize: '16px', color: '#374151' }}>
+                      Servicios seleccionados para el presupuesto ({serviciosPreventivos.length})
+                    </h4>
+
+                    {serviciosPreventivos.map((servicio, index) => (
+                      <div key={servicio.id} style={{
+                        marginBottom: '15px',
+                        padding: '15px',
+                        background: '#f9fafb',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ marginBottom: '8px' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                background: '#dbeafe',
+                                color: '#1e40af',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                marginRight: '10px'
+                              }}>
+                                {servicio.codigo}
+                              </span>
+                              <span style={{ fontSize: '15px', fontWeight: '500' }}>
+                                {servicio.descripcion || servicio.servicio}
+                              </span>
+                              <span style={{
+                                marginLeft: '10px',
+                                padding: '2px 8px',
+                                background: '#fef3c7',
+                                color: '#92400e',
+                                borderRadius: '4px',
+                                fontSize: '12px'
+                              }}>
+                                Cantidad: {servicio.cantidadServicio || servicio.cantidadRepuesto || 1}
+                              </span>
+                            </div>
+
+                            {/* Detalles del servicio */}
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                              gap: '10px',
+                              fontSize: '13px',
+                              color: '#6b7280',
+                              marginBottom: '10px'
+                            }}>
+                              <div>
+                                <span style={{ color: '#9ca3af' }}>Mano de obra:</span>
+                                <div style={{ fontWeight: '500' }}>
+                                  ${((servicio.manoObra || 0) * (servicio.cantidadServicio || 1)).toLocaleString()}
+                                </div>
+                              </div>
+                              {servicio.repuestos && servicio.repuestos.length > 0 && (
+                                <>
+                                  <div>
+                                    <span style={{ color: '#9ca3af' }}>Repuestos neto:</span>
+                                    <div style={{ fontWeight: '500' }}>
+                                      ${servicio.totalRepuestos?.toLocaleString() || 0}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <span style={{ color: '#9ca3af' }}>IVA (19%):</span>
+                                    <div style={{ fontWeight: '500' }}>
+                                      ${servicio.iva?.toLocaleString() || 0}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                              <div>
+                                <span style={{ color: '#9ca3af' }}>Total:</span>
+                                <div style={{ fontWeight: '600', color: '#059669' }}>
+                                  ${servicio.totalServicio?.toLocaleString() || 0}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Lista de repuestos si existen */}
+                            {servicio.repuestos && servicio.repuestos.length > 0 && (
+                              <div style={{
+                                padding: '8px',
+                                background: 'white',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                color: '#6b7280'
+                              }}>
+                                <strong>Repuestos incluidos:</strong>
+                                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                                  {servicio.repuestos.map((rep, idx) => (
+                                    <li key={idx}>
+                                      {rep.cantidad * (servicio.cantidadServicio || 1)}x {rep.nombre} -
+                                      ${(rep.costoUnitario * rep.cantidad * (servicio.cantidadServicio || 1)).toLocaleString()}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => eliminarServicio(servicio.id)}
+                            style={{
+                              padding: '6px 10px',
+                              background: '#ef4444',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            🗑️ Quitar
+                          </button>
+                        </div>
                       </div>
+                    ))}
 
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                          Mano de obra ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={servicio.manoObra}
-                          onChange={(e) => actualizarServicio(servicio.id, 'manoObra', e.target.value)}
-                          placeholder="0"
-                          min="0"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      <div style={{ gridColumn: 'span 3' }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                          Descripción del servicio
-                        </label>
-                        <textarea
-                          value={servicio.detalle}
-                          onChange={(e) => actualizarServicio(servicio.id, 'detalle', e.target.value)}
-                          placeholder="Descripción detallada del trabajo a realizar..."
-                          rows={2}
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px',
-                            resize: 'none'
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                          Repuesto
-                        </label>
-                        <input
-                          type="text"
-                          value={servicio.repuestoDescripcion}
-                          onChange={(e) => actualizarServicio(servicio.id, 'repuestoDescripcion', e.target.value)}
-                          placeholder="Nombre del repuesto"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                          Cantidad
-                        </label>
-                        <input
-                          type="number"
-                          value={servicio.cantidadRepuesto}
-                          onChange={(e) => actualizarServicio(servicio.id, 'cantidadRepuesto', e.target.value)}
-                          min="1"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                          Costo unitario ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={servicio.costoRepuesto}
-                          onChange={(e) => actualizarServicio(servicio.id, 'costoRepuesto', e.target.value)}
-                          placeholder="0"
-                          min="0"
-                          style={{
-                            width: '100%',
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px'
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Campo IVA para cada servicio */}
-                    <div style={{ marginTop: '15px' }}>
-                      <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
-                        IVA ($)
-                      </label>
-                      <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-                        <input
-                          type="number"
-                          value={servicio.iva}
-                          onChange={(e) => actualizarServicio(servicio.id, 'iva', e.target.value)}
-                          placeholder="0"
-                          min="0"
-                          style={{
-                            flex: 1,
-                            padding: '10px',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '8px',
-                            fontSize: '14px'
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const costoRepuestos = (parseFloat(servicio.costoRepuesto) || 0) * (parseInt(servicio.cantidadRepuesto) || 1);
-                            const ivaCalculado = Math.round(costoRepuestos * 0.19); // IVA solo sobre repuestos
-                            actualizarServicio(servicio.id, 'iva', ivaCalculado);
-                          }}
-                          style={{
-                            padding: '8px 12px',
-                            background: '#f59e0b',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
-                          }}
-                          title="Calcular 19% del costo de repuestos"
-                        >
-                          Calcular IVA (19%)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Resumen de totales para ESTE servicio específico */}
+                    {/* Total general */}
                     <div style={{
-                      marginTop: '15px',
-                      padding: '10px',
-                      background: 'white',
+                      marginTop: '20px',
+                      padding: '15px',
+                      background: '#f0fdf4',
                       borderRadius: '8px',
-                      fontSize: '14px'
+                      border: '1px solid #86efac'
                     }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ color: '#6b7280' }}>Repuestos (neto):</span>
-                        <span style={{ fontWeight: '600' }}>
-                          ${((parseFloat(servicio.costoRepuesto) || 0) * (parseInt(servicio.cantidadRepuesto) || 1)).toLocaleString('es-CL')}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ color: '#6b7280' }}>Repuestos con IVA:</span>
-                        <span style={{ fontWeight: '600' }}>
-                          ${Math.round(((parseFloat(servicio.costoRepuesto) || 0) * (parseInt(servicio.cantidadRepuesto) || 1)) * 1.19).toLocaleString('es-CL')}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ color: '#6b7280' }}>Mano de obra:</span>
-                        <span style={{ fontWeight: '600' }}>
-                          ${(parseFloat(servicio.manoObra) || 0).toLocaleString('es-CL')}
-                        </span>
-                      </div>
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
-                        borderTop: '1px solid #e5e7eb',
-                        paddingTop: '5px'
+                        alignItems: 'center',
+                        fontSize: '18px',
+                        fontWeight: '600',
+                        color: '#059669'
                       }}>
-                        <span style={{ fontWeight: '600', color: '#059669' }}>Total del servicio:</span>
-                        <span style={{ fontWeight: '700', color: '#059669', fontSize: '16px' }}>
-                          ${((parseFloat(servicio.manoObra) || 0) + Math.round(((parseFloat(servicio.costoRepuesto) || 0) * (parseInt(servicio.cantidadRepuesto) || 1)) * 1.19)).toLocaleString('es-CL')}
-                        </span>
+                        <span>💰 Total del Presupuesto:</span>
+                        <span>${calcularTotales().total.toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
-                ))}
+                )}
 
-                <button
-                  type="button"
-                  onClick={agregarServicio}
-                  style={{
-                    width: '100%',
-                    padding: '15px',
-                    background: 'white',
-                    border: '2px dashed #3b82f6',
+                {serviciosPreventivos.length === 0 && (
+                  <div style={{
+                    padding: '40px',
+                    background: '#f9fafb',
                     borderRadius: '12px',
-                    color: '#3b82f6',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#eff6ff';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'white';
+                    textAlign: 'center',
+                    color: '#6b7280'
                   }}>
-                  ➕ Agregar otro servicio
-                </button>
+                    <div style={{ fontSize: '48px', marginBottom: '10px' }}>📦</div>
+                    <p style={{ fontSize: '16px', fontWeight: '500' }}>
+                      No hay servicios seleccionados
+                    </p>
+                    <p style={{ fontSize: '14px' }}>
+                      Busca y agrega servicios del catálogo para crear tu presupuesto
+                    </p>
+                  </div>
+                )}
 
+                {/* Navegación */}
                 <div style={{ marginTop: '30px', display: 'flex', justifyContent: 'space-between' }}>
                   <button
                     type="button"
@@ -1480,15 +1575,17 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
                   <button
                     type="button"
                     onClick={() => setCurrentStep(3)}
+                    disabled={serviciosPreventivos.length === 0}
                     style={{
                       padding: '12px 30px',
-                      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                      color: 'white',
+                      background: serviciosPreventivos.length > 0 ?
+                        'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : '#e5e7eb',
+                      color: serviciosPreventivos.length > 0 ? 'white' : '#9ca3af',
                       border: 'none',
                       borderRadius: '10px',
                       fontSize: '16px',
                       fontWeight: '600',
-                      cursor: 'pointer',
+                      cursor: serviciosPreventivos.length > 0 ? 'pointer' : 'not-allowed',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px'
@@ -1567,9 +1664,11 @@ const PreventiveMaintenanceModule = ({ vehiculos, currentUser, isMobile }) => {
                       borderRadius: '8px'
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <strong style={{ fontSize: '14px' }}>#{i + 1} {s.servicio || 'Sin nombre'}</strong>
+                        <strong style={{ fontSize: '14px' }}>
+                          #{i + 1} {s.descripcion || s.servicio || 'Sin nombre'}
+                        </strong>
                         <span style={{ fontWeight: '600', color: '#059669' }}>
-                          ${((parseFloat(s.manoObra) || 0) + ((parseFloat(s.costoRepuesto) || 0) * (parseInt(s.cantidadRepuesto) || 1))).toLocaleString('es-CL')}
+                          ${(s.totalServicio || ((parseFloat(s.manoObra) || 0) + ((parseFloat(s.costoRepuesto) || 0) * (parseInt(s.cantidadRepuesto) || 1)))).toLocaleString('es-CL')}
                         </span>
                       </div>
                       {s.detalle && (

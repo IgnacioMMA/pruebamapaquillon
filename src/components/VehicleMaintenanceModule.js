@@ -1,9 +1,7 @@
 // src/components/VehicleMaintenanceModule.js
 
 import React, { useState, useEffect, useCallback } from 'react';
-import ServiceCatalogManager from './ServiceCatalogManager';
 import { pdfExportService } from '../services/pdfExportService';
-import ServiceCatalogSelector from './ServiceCatalogSelector';
 import {
     database,
     storage,
@@ -80,14 +78,68 @@ const VehicleMaintenanceModule = ({
         fotos: [],
         inspectionData: {}, // Datos dinámicos de inspección
         workData: {}, // Datos dinámicos de trabajos
-        serviciosCatalogo: []
+        serviciosCatalogo: [],
+        presupuestoId: '', // ID del presupuesto asociado
+        presupuestoData: null // Datos del presupuesto asociado
 
     });
+    // Estado para presupuestos disponibles
+
+    const [presupuestosDisponibles, setPresupuestosDisponibles] = useState([]);
 
     // Cargar elementos de configuración al iniciar
     useEffect(() => {
         loadConfigElements();
-    }, []);
+        loadPresupuestos();
+    }, [selectedVehicle]);
+    // Cargar presupuestos disponibles para el vehículo seleccionado
+    // Cargar presupuestos disponibles para el vehículo seleccionado
+    const loadPresupuestos = async () => {
+        if (!selectedVehicle || !selectedVehicle.patente) return;
+
+        try {
+            const presupuestosRef = databaseRef(database, 'mantenimientos');
+            onValue(presupuestosRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const presupuestos = Object.entries(data)
+                        .map(([id, presupuesto]) => ({
+                            id,
+                            ...presupuesto
+                        }))
+                        // Filtrar por patente en vez de ID
+                        .filter(p => p.vehiculoPatente === selectedVehicle.patente)
+                        .sort((a, b) => new Date(b.fechaSolicitud || b.fechaMantenimiento) - new Date(a.fechaSolicitud || a.fechaMantenimiento));
+                    setPresupuestosDisponibles(presupuestos);
+                } else {
+                    setPresupuestosDisponibles([]);
+                }
+            });
+        } catch (error) {
+            console.error('Error al cargar presupuestos:', error);
+        }
+    };
+    // Manejar la selección de un presupuesto
+    const handlePresupuestoSelect = (presupuestoId) => {
+        const presupuestoSeleccionado = presupuestosDisponibles.find(p => p.id === presupuestoId);
+
+        if (presupuestoSeleccionado) {
+            // Autocompletar datos del formulario con la información del presupuesto
+            setMaintenanceForm(prev => ({
+                ...prev,
+                presupuestoId: presupuestoId,
+                presupuestoData: presupuestoSeleccionado,
+                costoMantenimiento: presupuestoSeleccionado.totales?.total || 0,
+                serviciosCatalogo: presupuestoSeleccionado.serviciosPreventivos || [],
+                tipoMantenimiento: 'preventivo' // Por defecto si viene de presupuesto
+            }));
+
+            setMessage({
+                type: 'success',
+                text: `✅ Presupuesto #${presupuestoId.substring(0, 8).toUpperCase()} asociado correctamente`
+            });
+        }
+    };
 
     // Cargar elementos de inspección y trabajo desde Firebase
     const loadConfigElements = async () => {
@@ -392,8 +444,10 @@ const VehicleMaintenanceModule = ({
                 fechaRegistro: new Date().toISOString(),
                 registradoPor: currentUser.uid,
                 registradoPorNombre: currentUser.name || currentUser.email,
-                serviciosCatalogo: maintenanceForm.serviciosCatalogo || [], // <-- INCLUIR ESTO
-                costoTotal: maintenanceForm.costoMantenimiento // <-- INCLUIR ESTO
+                serviciosCatalogo: maintenanceForm.serviciosCatalogo || [],
+                costoTotal: maintenanceForm.costoMantenimiento,
+                presupuestoId: maintenanceForm.presupuestoId || null, // Guardar ID del presupuesto
+                presupuestoAsociado: maintenanceForm.presupuestoId ? true : false // Indicador
             };
 
             const maintenanceRef = databaseRef(database, `mantenimientos/${selectedVehicle.id}`);
@@ -642,6 +696,10 @@ const VehicleMaintenanceModule = ({
                             workItems={workItems}
                             handleInspectionChange={handleInspectionChange}
                             handleWorkChange={handleWorkChange}
+                            presupuestosDisponibles={presupuestosDisponibles}
+                            handlePresupuestoSelect={handlePresupuestoSelect}
+                            setMessage={setMessage}
+
                         />
                     )}
 
@@ -1696,7 +1754,11 @@ const MaintenanceForm = ({
     inspectionItems,
     workItems,
     handleInspectionChange,
-    handleWorkChange
+    handleWorkChange,
+    presupuestosDisponibles,
+    handlePresupuestoSelect,
+    setMessage
+
 }) => {
     const [inspectionFilter, setInspectionFilter] = useState('');
     const [workFilter, setWorkFilter] = useState('');
@@ -1751,41 +1813,95 @@ const MaintenanceForm = ({
                 }}>
                     📋 Información General
                 </h4>
-                <ServiceCatalogSelector
-                    onAddService={(servicio) => {
-                        setForm(prev => {
-                            const nuevosServicios = [...(prev.serviciosCatalogo || []), servicio];
-                            const nuevoTotal = nuevosServicios.reduce((total, s) =>
-                                total + (s.totales?.total || 0), 0
-                            );
 
-                            return {
-                                ...prev,
-                                serviciosCatalogo: nuevosServicios,
-                                costoMantenimiento: nuevoTotal
-                            };
-                        });
-                    }}
-                    selectedServices={form.serviciosCatalogo || []}
-                    onRemoveService={(idTemp) => {
-                        setForm(prev => {
-                            const serviciosActualizados = prev.serviciosCatalogo.filter(
-                                s => s.idTemp !== idTemp
-                            );
-                            const nuevoTotal = serviciosActualizados.reduce((total, s) =>
-                                total + (s.totales?.total || 0), 0
-                            );
+                {/* Sección para asociar presupuesto */}
+                {presupuestosDisponibles && presupuestosDisponibles.length > 0 && (
+                    <div style={{
+                        marginBottom: '20px',
+                        padding: '15px',
+                        background: '#f0f9ff',
+                        borderRadius: '8px',
+                        border: '2px solid #0ea5e9'
+                    }}>
+                        <h5 style={{
+                            margin: '0 0 10px 0',
+                            fontSize: '14px',
+                            color: '#0c4a6e',
+                            fontWeight: '600'
+                        }}>
+                            💰 Asociar con Presupuesto Previo (Opcional)
+                        </h5>
 
-                            return {
-                                ...prev,
-                                serviciosCatalogo: serviciosActualizados,
-                                costoMantenimiento: nuevoTotal
-                            };
-                        });
-                    }}
-                    isMobile={isMobile}
-                />
+                        <select
+                            value={form.presupuestoId}
+                            onChange={(e) => handlePresupuestoSelect(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                background: 'white'
+                            }}
+                        >
+                            <option value="">-- Seleccionar presupuesto --</option>
+                            {presupuestosDisponibles.map(presupuesto => (
+                                <option key={presupuesto.id} value={presupuesto.id}>
+                                    #{presupuesto.id.substring(0, 8).toUpperCase()} -
+                                    Patente: {presupuesto.vehiculoPatente} -
+                                    {new Date(presupuesto.fechaSolicitud || presupuesto.fechaMantenimiento).toLocaleDateString('es-CL')} -
+                                    ${presupuesto.totales?.total?.toLocaleString() || 0} -
+                                    {presupuesto.serviciosPreventivos?.length || 0} servicio(s)
+                                </option>
+                            ))}
+                        </select>
 
+                        {form.presupuestoData && (
+                            <div style={{
+                                marginTop: '10px',
+                                padding: '10px',
+                                background: '#dcfce7',
+                                borderRadius: '6px',
+                                fontSize: '13px',
+                                color: '#15803d'
+                            }}>
+                                <strong>✅ Presupuesto asociado:</strong>
+                                <div style={{ marginTop: '5px' }}>
+                                    • Fecha: {new Date(form.presupuestoData.fechaSolicitud || form.presupuestoData.fechaMantenimiento).toLocaleDateString('es-CL')}<br />
+                                    • Total: ${form.presupuestoData.totales?.total?.toLocaleString() || 0}<br />
+                                    • Servicios: {form.presupuestoData.serviciosPreventivos?.length || 0}<br />
+                                    • Tipo repuestos: {form.presupuestoData.tipoRepuesto === 'original' ? 'Originales' : 'Alternativos'}
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setForm(prev => ({
+                                            ...prev,
+                                            presupuestoId: '',
+                                            presupuestoData: null,
+                                            costoMantenimiento: 0,
+                                            serviciosCatalogo: []
+                                        }));
+                                        setMessage({ type: 'info', text: 'Presupuesto desvinculado' });
+                                    }}
+                                    style={{
+                                        marginTop: '8px',
+                                        padding: '6px 12px',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        fontSize: '12px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Desvincular Presupuesto
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
