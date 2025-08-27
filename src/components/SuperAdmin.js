@@ -8,6 +8,7 @@ import { doc, setDoc, collection, getDocs, deleteDoc, updateDoc } from 'firebase
 import WelcomeScreen from './WelcomeScreen';
 import NotificationSystem from './NotificationSystem';
 import VehicleMaintenanceModule from './VehicleMaintenanceModule';
+import PreventiveMaintenanceModule from './PreventiveMaintenanceModule';
 
 import {
   ref as databaseRef,     // Alias para database ref
@@ -444,6 +445,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
 
   // ========== ESTADOS PARA USUARIOS ==========
   const [solicitudParaZona, setSolicitudParaZona] = useState(null);
+  // En la línea ~90, actualiza el estado inicial de formData:
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -454,13 +456,19 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
     localidad: '',
     recoveryPin: '',
     rut: '',
-    licenciaConducir: '', // Cambiará a array
-    licenciasConducir: [], // NUEVO: Array para múltiples licencias
+    fotoPerfil: {
+      url: '',
+      publicId: '',
+      fecha: ''
+    },
+    // REMOVER polizaSeguro de aquí
+    licenciaConducir: '',
+    licenciasConducir: [],
     fechaVencimientoLicencia: '',
-    observacionesLicencia: '', // NUEVO: Para lentes, restricciones, etc.
-    licenciaBloqueada: false, // NUEVO: Estado de bloqueo
-    motivoBloqueo: '', // NUEVO: Razón del bloqueo
-    fechaBloqueo: '' // NUEVO: Cuándo se bloqueó
+    observacionesLicencia: '',
+    licenciaBloqueada: false,
+    motivoBloqueo: '',
+    fechaBloqueo: ''
   });
   const [notificationCount, setNotificationCount] = useState(0);
   const [users, setUsers] = useState([]);
@@ -576,6 +584,17 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       facturaCompra: { url: '', nombre: '', fecha: '' },
       contratoLeasing: { url: '', nombre: '', fecha: '' },
       otros: []
+    },
+    polizaSeguroVehiculo: {
+      url: '',
+      nombre: '',
+      fecha: '',
+      publicId: '',
+      numeroPoliza: '',
+      vigencia: '',
+      compania: '',
+      cobertura: '',
+      tipoSeguro: ''  // obligatorio o adicional
     },
 
     // CONTROL DE OPERACIÓN
@@ -739,6 +758,172 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       setMessage({
         type: 'error',
         text: '❌ Error al subir la imagen'
+      });
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  // Agregar después de handleFileUpload (alrededor de línea 450)
+  const handleVehiclePolizaUpload = async (file) => {
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+      setMessage({
+        type: 'error',
+        text: '❌ Solo se permiten imágenes JPG y PNG'
+      });
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setMessage({
+        type: 'error',
+        text: '❌ El archivo no puede superar los 10MB'
+      });
+      return;
+    }
+
+    setUploadingFile(true);
+
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      uploadFormData.append('upload_preset', 'vehiculos_docs');
+
+      const vehicleId = editingVehicle?.id || `temp_${Date.now()}`;
+      const timestamp = Date.now();
+      const cleanFileName = file.name.split('.')[0].replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      uploadFormData.append('folder', `municipalidad/vehiculos/${vehicleId}/poliza`);
+      uploadFormData.append('public_id', `${timestamp}_${cleanFileName}`);
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/image/upload`,
+        {
+          method: 'POST',
+          body: uploadFormData
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Error al subir archivo');
+      }
+
+      setVehicleFormData(prev => ({
+        ...prev,
+        polizaSeguroVehiculo: {
+          ...prev.polizaSeguroVehiculo,
+          url: data.secure_url,
+          publicId: data.public_id,
+          nombre: file.name,
+          fecha: new Date().toISOString()
+        }
+      }));
+
+      setMessage({
+        type: 'success',
+        text: '✅ Póliza de seguro subida exitosamente'
+      });
+
+    } catch (error) {
+      console.error('Error al subir:', error);
+      setMessage({
+        type: 'error',
+        text: `❌ Error al subir la imagen: ${error.message}`
+      });
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+  const handleUserFileUpload = async (file, tipoDocumento, userId) => {
+    if (!file) return;
+
+    // Validaciones
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+      setMessage({
+        type: 'error',
+        text: '❌ Solo se permiten imágenes JPG y PNG'
+      });
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setMessage({
+        type: 'error',
+        text: '❌ El archivo no puede superar los 10MB'
+      });
+      return;
+    }
+
+    setUploadingFile(true);
+
+    try {
+      const uploadFormData = new FormData(); // CAMBIO: Renombrar para evitar conflicto
+      uploadFormData.append('file', file);
+      uploadFormData.append('upload_preset', 'vehiculos_docs'); // CAMBIO: Usar el mismo preset que ya funciona
+
+      // CAMBIO: Usar el email del estado formData correctamente
+      const userIdentifier = userId || formData.email || `temp_${Date.now()}`;
+      const timestamp = Date.now();
+      const cleanFileName = file.name.split('.')[0].replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      uploadFormData.append('folder', `municipalidad/usuarios/${userIdentifier}/${tipoDocumento}`);
+      uploadFormData.append('public_id', `${timestamp}_${cleanFileName}`);
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/image/upload`,
+        {
+          method: 'POST',
+          body: uploadFormData // CAMBIO: Usar uploadFormData
+        }
+      );
+
+      const data = await response.json();
+
+      // AGREGAR: Verificar si la respuesta fue exitosa
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Error al subir archivo');
+      }
+
+      console.log('✅ Imagen subida:', data); // Debug
+
+      if (tipoDocumento === 'fotoPerfil') {
+        setFormData(prev => ({
+          ...prev,
+          fotoPerfil: {
+            url: data.secure_url,
+            publicId: data.public_id,
+            fecha: new Date().toISOString()
+          }
+        }));
+      } else if (tipoDocumento === 'polizaSeguro') {
+        setFormData(prev => ({
+          ...prev,
+          polizaSeguro: {
+            ...prev.polizaSeguro,
+            url: data.secure_url,
+            publicId: data.public_id,
+            nombre: file.name,
+            fecha: new Date().toISOString()
+          }
+        }));
+      }
+
+      setMessage({
+        type: 'success',
+        text: `✅ ${tipoDocumento === 'fotoPerfil' ? 'Foto de perfil' : 'Póliza'} subida exitosamente`
+      });
+
+    } catch (error) {
+      console.error('Error al subir:', error);
+      setMessage({
+        type: 'error',
+        text: `❌ Error al subir la imagen: ${error.message}`
       });
     } finally {
       setUploadingFile(false);
@@ -1192,6 +1377,8 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         licenciaBloqueada: formData.licenciaBloqueada || false, // NUEVO
         motivoBloqueo: formData.motivoBloqueo || '', // NUEVO
         fechaBloqueo: formData.fechaBloqueo || '', // NUEVO
+        fotoPerfil: formData.fotoPerfil || null,
+        polizaSeguro: formData.polizaSeguro || null,
         createdAt: new Date().toISOString(),
         createdBy: currentUser.uid,
         active: true,
@@ -1246,6 +1433,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       });
 
       // Resetear formulario
+      // En el reseteo del formulario después de crear usuario exitosamente
       setFormData({
         email: '',
         password: '',
@@ -1257,12 +1445,28 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         recoveryPin: '',
         rut: '',
         licenciaConducir: '',
-        licenciasConducir: [], // Resetear array de licencias
+        licenciasConducir: [],
         fechaVencimientoLicencia: '',
         observacionesLicencia: '',
         licenciaBloqueada: false,
         motivoBloqueo: '',
-        fechaBloqueo: ''
+        fechaBloqueo: '',
+        // AGREGAR:
+        fotoPerfil: {
+          url: '',
+          publicId: '',
+          fecha: ''
+        },
+        polizaSeguro: {
+          url: '',
+          nombre: '',
+          fecha: '',
+          publicId: '',
+          numeroPoliza: '',
+          vigencia: '',
+          compania: '',
+          cobertura: ''
+        }
       });
 
       // Recargar lista de usuarios
@@ -1363,6 +1567,18 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       licenciasConducir: user.licenciasConducir || [], // CARGAR ARRAY DE LICENCIAS
       fechaVencimientoLicencia: user.fechaVencimientoLicencia || '',
       observacionesLicencia: user.observacionesLicencia || '',
+
+      fotoPerfil: user.fotoPerfil || { url: '', publicId: '', fecha: '' },
+      polizaSeguro: user.polizaSeguro || {
+        url: '',
+        nombre: '',
+        fecha: '',
+        publicId: '',
+        numeroPoliza: '',
+        vigencia: '',
+        compania: '',
+        cobertura: ''
+      },
       licenciaBloqueada: user.licenciaBloqueada || false,
       motivoBloqueo: user.motivoBloqueo || '',
       fechaBloqueo: user.fechaBloqueo || ''
@@ -1398,6 +1614,8 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         licenciaBloqueada: formData.licenciaBloqueada || false,
         motivoBloqueo: formData.motivoBloqueo || '',
         fechaBloqueo: formData.fechaBloqueo || '',
+        fotoPerfil: formData.fotoPerfil || null,
+        polizaSeguro: formData.polizaSeguro || null,
         updatedAt: new Date().toISOString(),
         updatedBy: currentUser.uid
       };
@@ -1480,6 +1698,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         tipoCombustible: vehicleFormData.tipoCombustible || 'gasolina',
         estado: estadoValido,
         licenciasRequeridas: vehicleFormData.licenciasRequeridas || [],
+        polizaSeguroVehiculo: vehicleFormData.polizaSeguroVehiculo || null,
 
         // Mantenimiento
         ultimoMantenimiento: vehicleFormData.ultimoMantenimiento || '',
@@ -1998,13 +2217,20 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
           badge: getVehicleStats().total
         },
         {
-          id: 'maintenance',  // NUEVO
+          id: 'maintenance',
           icon: '🔧',
           title: 'Mantenimientos',
           tab: 'maintenance',
           badge: getMaintenanceAlerts(),
           badgeType: getMaintenanceAlerts() > 0 ? 'alert' : null
         },
+        {
+          id: 'supplies',
+          icon: '⛽',
+          title: 'Suministros',
+          tab: 'supplies'
+        },
+
         {
           id: 'solicitudes',
           icon: '📋',
@@ -3206,10 +3432,10 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                   border: '1px solid #d1d5db',
                                   borderRadius: '6px',
                                   fontSize: '14px',
-                                  resize: 'none',  // ← ESTA ES LA LÍNEA CLAVE
-                                  overflow: 'auto', // Agrega scroll si el contenido es muy largo
-                                  minHeight: '80px', // Altura mínima
-                                  maxHeight: '200px' // Altura máxima antes de mostrar scroll
+                                  resize: 'none',
+                                  overflow: 'auto',
+                                  minHeight: '80px',
+                                  maxHeight: '200px'
                                 }}
                               />
                               <div style={{
@@ -3244,6 +3470,91 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                               </div>
                             </div>
                           )}
+                          {/* FOTO DE PERFIL - NUEVO */}
+                          <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              📸 Foto de Perfil
+                            </label>
+
+                            {formData.fotoPerfil?.url ? (
+                              <div style={{
+                                display: 'flex',
+                                gap: '15px',
+                                alignItems: 'center',
+                                padding: '15px',
+                                background: '#f9fafb',
+                                borderRadius: '8px'
+                              }}>
+                                <img
+                                  src={formData.fotoPerfil.url}
+                                  alt="Foto de perfil"
+                                  style={{
+                                    width: '80px',
+                                    height: '80px',
+                                    borderRadius: '50%',
+                                    objectFit: 'cover'
+                                  }}
+                                />
+                                <div style={{ flex: 1 }}>
+                                  <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#374151' }}>
+                                    Foto cargada exitosamente
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormData(prev => ({
+                                      ...prev,
+                                      fotoPerfil: { url: '', publicId: '', fecha: '' }
+                                    }))}
+                                    style={{
+                                      padding: '6px 12px',
+                                      background: '#ef4444',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    🗑️ Eliminar
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <input
+                                  type="file"
+                                  id="fotoPerfil"
+                                  accept=".jpg,.jpeg,.png"
+                                  onChange={(e) => handleUserFileUpload(e.target.files[0], 'fotoPerfil', editingUser?.id)}
+                                  style={{ display: 'none' }}
+                                />
+                                <label
+                                  htmlFor="fotoPerfil"
+                                  style={{
+                                    display: 'block',
+                                    padding: '30px',
+                                    background: '#f9fafb',
+                                    border: '2px dashed #d1d5db',
+                                    borderRadius: '8px',
+                                    textAlign: 'center',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <div style={{ fontSize: '40px', marginBottom: '10px' }}>👤</div>
+                                  <div style={{ color: '#374151' }}>Click para subir foto</div>
+                                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
+                                    JPG o PNG - Máx. 10MB
+                                  </div>
+                                </label>
+                              </div>
+                            )}
+                          </div>
 
                           {/* ESTADO DE BLOQUEO - NUEVO */}
                           {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
@@ -3792,7 +4103,8 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                   padding: '10px',
                                   border: '1px solid #d1d5db',
                                   borderRadius: '6px',
-                                  fontSize: '14px'
+                                  fontSize: '14px',
+                                  resize: 'none'
                                 }}
                               />
                               <div style={{
@@ -3826,6 +4138,92 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                               </div>
                             </div>
                           )}
+                          {/* 🆕 NUEVO CAMPO - FOTO DE PERFIL */}
+                          <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                            <label style={{
+                              display: 'block',
+                              marginBottom: '8px',
+                              color: '#374151',
+                              fontSize: '14px',
+                              fontWeight: '500'
+                            }}>
+                              📸 Foto de Perfil
+                            </label>
+
+                            {formData.fotoPerfil?.url ? (
+                              <div style={{
+                                display: 'flex',
+                                gap: '15px',
+                                alignItems: 'center',
+                                padding: '15px',
+                                background: '#f9fafb',
+                                borderRadius: '8px'
+                              }}>
+                                <img
+                                  src={formData.fotoPerfil.url}
+                                  alt="Foto de perfil"
+                                  style={{
+                                    width: '80px',
+                                    height: '80px',
+                                    borderRadius: '50%',
+                                    objectFit: 'cover'
+                                  }}
+                                />
+                                <div style={{ flex: 1 }}>
+                                  <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#374151' }}>
+                                    Foto actual
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setFormData(prev => ({
+                                      ...prev,
+                                      fotoPerfil: { url: '', publicId: '', fecha: '' }
+                                    }))}
+                                    style={{
+                                      padding: '6px 12px',
+                                      background: '#ef4444',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      fontSize: '12px',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    🗑️ Eliminar
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <input
+                                  type="file"
+                                  id="fotoPerfilEdit"
+                                  accept=".jpg,.jpeg,.png"
+                                  onChange={(e) => handleUserFileUpload(e.target.files[0], 'fotoPerfil', editingUser?.id)}
+                                  style={{ display: 'none' }}
+                                />
+                                <label
+                                  htmlFor="fotoPerfilEdit"
+                                  style={{
+                                    display: 'block',
+                                    padding: '30px',
+                                    background: '#f9fafb',
+                                    border: '2px dashed #d1d5db',
+                                    borderRadius: '8px',
+                                    textAlign: 'center',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <div style={{ fontSize: '40px', marginBottom: '10px' }}>👤</div>
+                                  <div style={{ color: '#374151' }}>Click para subir foto</div>
+                                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '5px' }}>
+                                    JPG o PNG - Máx. 10MB
+                                  </div>
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                          {/* 🆕 FIN FOTO DE PERFIL */}
 
                           {/* ESTADO DE BLOQUEO - AGREGADO */}
                           {formData.licenciasConducir && formData.licenciasConducir.length > 0 && (
@@ -3970,7 +4368,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                               <option value="trabajador">👷 Trabajador</option>
                               <option value="admin">👨‍💼 Administrador</option>
                               <option value="superadmin">🔐 Super Admin</option>
-                              <option value="monitor">📊 Monitor</option> {/* AGREGAR ESTA LÍNEA */}
+                              <option value="monitor">📊 Monitor</option>
                             </select>
                           </div>
 
@@ -4224,6 +4622,36 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                   ) : (
                                     <span style={{ color: '#9ca3af', fontSize: '12px' }}>Sin licencia</span>
                                   )}
+                                </td>
+                                <td style={{ padding: '16px 20px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    {user.fotoPerfil?.url ? (
+                                      <img
+                                        src={user.fotoPerfil.url}
+                                        alt={user.name}
+                                        style={{
+                                          width: '32px',
+                                          height: '32px',
+                                          borderRadius: '50%',
+                                          objectFit: 'cover'
+                                        }}
+                                      />
+                                    ) : (
+                                      <div style={{
+                                        width: '32px',
+                                        height: '32px',
+                                        borderRadius: '50%',
+                                        background: '#e5e7eb',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '14px'
+                                      }}>
+                                        👤
+                                      </div>
+                                    )}
+                                    <span>{user.name}</span>
+                                  </div>
                                 </td>
                                 <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
                                   {user.phone || '-'}
@@ -5340,6 +5768,253 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                               </select>
                             </div>
                             {/* SECCIÓN DE SEGURO COMERCIAL/ADICIONAL */}
+                            {/* SECCIÓN DE PÓLIZA DE SEGURO DEL VEHÍCULO */}
+                            <div style={{
+                              marginTop: '20px',
+                              padding: '20px',
+                              background: '#f0f9ff',
+                              borderRadius: '8px',
+                              border: '1px solid #0284c7',
+                              gridColumn: isMobile ? 'span 1' : 'span 2'  // <-- AÑADE ESTA LÍNEA
+
+                            }}>
+                              <h4 style={{
+                                margin: '0 0 15px 0',
+                                color: '#0c4a6e',
+                                fontSize: '15px',
+                                fontWeight: '600',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                              }}>
+                                🛡️ Póliza de Seguro del Vehículo
+                                <span style={{
+                                  fontSize: '12px',
+                                  color: '#64748b',
+                                  fontWeight: '400'
+                                }}>
+                                  (Documentación del seguro obligatorio o adicional)
+                                </span>
+                              </h4>
+
+                              <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? '100%' : '200px'}, 1fr))`,
+                                gap: '15px',
+                                marginBottom: '15px'
+                              }}>
+                                <div>
+                                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#374151' }}>
+                                    Tipo de Seguro
+                                  </label>
+                                  <select
+                                    value={vehicleFormData.polizaSeguroVehiculo?.tipoSeguro || ''}
+                                    onChange={(e) => setVehicleFormData(prev => ({
+                                      ...prev,
+                                      polizaSeguroVehiculo: { ...prev.polizaSeguroVehiculo, tipoSeguro: e.target.value }
+                                    }))}
+                                    style={{
+                                      width: '100%',
+                                      padding: '8px',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '4px',
+                                      fontSize: '13px'
+                                    }}
+                                  >
+                                    <option value="">-- Seleccionar --</option>
+                                    <option value="soap">SOAP (Obligatorio)</option>
+                                    <option value="adicional">Seguro Adicional</option>
+                                    <option value="ambos">Ambos</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#374151' }}>
+                                    N° Póliza
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={vehicleFormData.polizaSeguroVehiculo?.numeroPoliza || ''}
+                                    onChange={(e) => setVehicleFormData(prev => ({
+                                      ...prev,
+                                      polizaSeguroVehiculo: { ...prev.polizaSeguroVehiculo, numeroPoliza: e.target.value }
+                                    }))}
+                                    placeholder="Número de póliza"
+                                    style={{
+                                      width: '100%',
+                                      padding: '8px',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '4px',
+                                      fontSize: '13px'
+                                    }}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#374151' }}>
+                                    Compañía
+                                  </label>
+                                  <select
+                                    value={vehicleFormData.polizaSeguroVehiculo?.compania || ''}
+                                    onChange={(e) => setVehicleFormData(prev => ({
+                                      ...prev,
+                                      polizaSeguroVehiculo: { ...prev.polizaSeguroVehiculo, compania: e.target.value }
+                                    }))}
+                                    style={{
+                                      width: '100%',
+                                      padding: '8px',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '4px',
+                                      fontSize: '13px'
+                                    }}
+                                  >
+                                    <option value="">-- Seleccionar --</option>
+                                    <option value="HDI">HDI Seguros</option>
+                                    <option value="MAPFRE">MAPFRE</option>
+                                    <option value="BCI">BCI Seguros</option>
+                                    <option value="Liberty">Liberty Seguros</option>
+                                    <option value="SURA">SURA</option>
+                                    <option value="Chilena">Chilena Consolidada</option>
+                                    <option value="Consorcio">Consorcio</option>
+                                    <option value="SOAP">SOAP Genérico</option>
+                                    <option value="Otra">Otra</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#374151' }}>
+                                    Vigencia
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={vehicleFormData.polizaSeguroVehiculo?.vigencia || ''}
+                                    onChange={(e) => setVehicleFormData(prev => ({
+                                      ...prev,
+                                      polizaSeguroVehiculo: { ...prev.polizaSeguroVehiculo, vigencia: e.target.value }
+                                    }))}
+                                    style={{
+                                      width: '100%',
+                                      padding: '8px',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '4px',
+                                      fontSize: '13px'
+                                    }}
+                                  />
+                                </div>
+
+                                <div style={{ gridColumn: isMobile ? 'span 1' : 'span 2' }}>
+                                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: '#374151' }}>
+                                    Cobertura
+                                  </label>
+                                  <textarea
+                                    value={vehicleFormData.polizaSeguroVehiculo?.cobertura || ''}
+                                    onChange={(e) => setVehicleFormData(prev => ({
+                                      ...prev,
+                                      polizaSeguroVehiculo: { ...prev.polizaSeguroVehiculo, cobertura: e.target.value }
+                                    }))}
+                                    placeholder="Detalle de cobertura del seguro"
+                                    rows={2}
+                                    style={{
+                                      width: '100%',
+                                      padding: '8px',
+                                      border: '1px solid #d1d5db',
+                                      borderRadius: '4px',
+                                      fontSize: '13px',
+                                      resize: 'none'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Subir documento de póliza */}
+                              {vehicleFormData.polizaSeguroVehiculo?.url ? (
+                                <div style={{
+                                  padding: '10px',
+                                  background: 'white',
+                                  borderRadius: '6px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}>
+                                  <div>
+                                    <p style={{ margin: 0, fontSize: '13px', fontWeight: '500' }}>
+                                      📄 {vehicleFormData.polizaSeguroVehiculo.nombre}
+                                    </p>
+                                    <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#6b7280' }}>
+                                      Subido: {new Date(vehicleFormData.polizaSeguroVehiculo.fecha).toLocaleDateString('es-CL')}
+                                    </p>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <a
+                                      href={vehicleFormData.polizaSeguroVehiculo.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        padding: '6px 12px',
+                                        background: '#3b82f6',
+                                        color: 'white',
+                                        borderRadius: '4px',
+                                        textDecoration: 'none',
+                                        fontSize: '12px'
+                                      }}
+                                    >
+                                      👁️ Ver
+                                    </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => setVehicleFormData(prev => ({
+                                        ...prev,
+                                        polizaSeguroVehiculo: {
+                                          ...prev.polizaSeguroVehiculo,
+                                          url: '',
+                                          nombre: '',
+                                          publicId: ''
+                                        }
+                                      }))}
+                                      style={{
+                                        padding: '6px 12px',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <input
+                                    type="file"
+                                    id="polizaSeguroVehiculo"
+                                    accept=".jpg,.jpeg,.png"
+                                    onChange={(e) => handleVehiclePolizaUpload(e.target.files[0])}
+                                    style={{ display: 'none' }}
+                                  />
+                                  <label
+                                    htmlFor="polizaSeguroVehiculo"
+                                    style={{
+                                      display: 'block',
+                                      padding: '20px',
+                                      background: 'white',
+                                      border: '2px dashed #d1d5db',
+                                      borderRadius: '6px',
+                                      textAlign: 'center',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    <div style={{ fontSize: '20px', marginBottom: '5px' }}>📤</div>
+                                    <div style={{ fontSize: '13px' }}>Subir imagen de póliza</div>
+                                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '5px' }}>
+                                      Solo imágenes JPG o PNG - Máx. 10MB
+                                    </div>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
                             {vehicleFormData.seguroComplementario && (
                               <div style={{
                                 marginTop: '20px',
@@ -5465,7 +6140,9 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                   </div>
                                 </div>
                               </div>
+
                             )}
+
                             <div>
                               <label style={{
                                 display: 'block',
@@ -5491,6 +6168,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                               />
                             </div>
                           </div>
+
 
                           {/* PARTE 2: CARGA DE DOCUMENTOS DIGITALIZADOS */}
                           <div style={{
@@ -5617,6 +6295,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                       >
                                         👁️ Ver
                                       </a>
+
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteDocument('permisoCirculacion')}
@@ -7191,9 +7870,20 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                     </div>
                   </div>
                 </>
+
               )}
+              {/* MANTENIMIENTOS - Módulo original */}
               {activeTab === 'maintenance' && (
                 <VehicleMaintenanceModule
+                  vehiculos={vehiculos}
+                  currentUser={currentUser}
+                  isMobile={isMobile}
+                />
+              )}
+
+              {/* SUMINISTROS - Módulo mejorado con pasos */}
+              {activeTab === 'supplies' && (
+                <PreventiveMaintenanceModule
                   vehiculos={vehiculos}
                   currentUser={currentUser}
                   isMobile={isMobile}
@@ -7229,8 +7919,8 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
             </>
           )}
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

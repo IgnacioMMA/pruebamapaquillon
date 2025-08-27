@@ -23,8 +23,7 @@ const FONTS = {
 
 // ========== SERVICIO DE EXPORTACIÓN PDF ==========
 export const pdfExportService = {
-
-  // ========== EXPORTAR USUARIO INDIVIDUAL A PDF (CON RUT Y LICENCIA) ==========
+  // ========== EXPORTAR USUARIO INDIVIDUAL A PDF ==========
   exportSingleUserToPDF: (user, currentUser) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
@@ -148,7 +147,7 @@ export const pdfExportService = {
     yPos = addField('Correo Electronico:', user.email || 'No especificado', yPos);
     yPos = addField('Telefono:', user.phone || 'No especificado', yPos);
 
-    // NUEVO: Licencia de conducir con detalles
+    // Licencia de conducir con detalles
     if (user.licenciaConducir) {
       const licenciaTexto = {
         'B': 'Clase B - Vehiculos particulares',
@@ -251,7 +250,7 @@ export const pdfExportService = {
       }
     });
 
-    // NUEVO: Sección de vehículos autorizados según licencia
+    // Sección de vehículos autorizados según licencia
     if (user.licenciaConducir && yPos < pageHeight - 80) {
       yPos += 10;
       doc.setTextColor(107, 114, 128);
@@ -324,9 +323,9 @@ export const pdfExportService = {
     doc.save(fileName);
   },
 
-  // ========== EXPORTAR USUARIOS A PDF (CON RUT Y LICENCIA) ==========
+  // ========== EXPORTAR USUARIOS A PDF ==========
   exportUsersToPDF: (users, currentUser) => {
-    const doc = new jsPDF('landscape'); // Orientación horizontal para más columnas
+    const doc = new jsPDF('landscape');
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
     const margins = { top: 20, left: 15, right: 15, bottom: 20 };
@@ -753,10 +752,9 @@ export const pdfExportService = {
 
     // Guardar el PDF
     doc.save(`vehiculos_mapaquillon_${now.getTime()}.pdf`);
-
-    
   },
-  // NUEVA FUNCIÓN - Agregar aquí, DENTRO del objeto
+
+  // ========== EXPORTAR HISTORIAL DE MANTENIMIENTO ==========
   exportMaintenanceHistory: (vehicle, history, currentUser) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
@@ -904,10 +902,240 @@ export const pdfExportService = {
     
     // Guardar PDF
     doc.save(`mantenimiento_${vehicle.patente}_${Date.now()}.pdf`);
-  }
-  
-};
-  
+  },
 
+  // ========== EXPORTAR REGISTRO INDIVIDUAL DE MANTENIMIENTO ==========
+  exportSingleMaintenanceRecord: (maintenance, vehicle, currentUser) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    
+    // Fecha del reporte
+    const now = new Date();
+    const fechaReporte = now.toLocaleDateString('es-CL', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+    // Header
+    doc.setFillColor(34, 197, 94);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont(undefined, 'bold');
+    doc.text('REPORTE DE MANTENIMIENTO', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'normal');
+    const fechaMant = new Date(maintenance.fecha).toLocaleDateString('es-CL');
+    doc.text(`${fechaMant} - ${maintenance.hora || ''} hrs`, pageWidth / 2, 32, { align: 'center' });
+    
+    // Información del vehículo
+    doc.setTextColor(31, 41, 55);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    let yPos = 55;
+    doc.text(`Vehículo: ${vehicle.nombre}`, 20, yPos);
+    
+    yPos += 10;
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    
+    // Crear tabla de información básica
+    const infoBasica = [
+      ['Patente', vehicle.patente],
+      ['Marca/Modelo', `${vehicle.marca} ${vehicle.modelo}`],
+      ['Tipo de Mantenimiento', maintenance.tipoMantenimiento?.toUpperCase() || 'N/A'],
+      ['Kilometraje', maintenance.kilometraje ? `${maintenance.kilometraje.toLocaleString()} km` : 'No registrado'],
+      ['Realizado por', maintenance.realizadoPor || 'No especificado'],
+      ['Taller/Lugar', maintenance.tallerResponsable || 'No especificado'],
+      ['Costo', maintenance.costoMantenimiento ? `$${maintenance.costoMantenimiento.toLocaleString()}` : 'Sin costo']
+    ];
+    
+    autoTable(doc, {
+      startY: yPos,
+      head: [],
+      body: infoBasica,
+      theme: 'grid',
+      styles: {
+        fontSize: 11,
+        cellPadding: 5
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', fillColor: [240, 242, 245], cellWidth: 50 },
+        1: { cellWidth: 130 }
+      }
+    });
+    
+    yPos = doc.lastAutoTable.finalY + 15;
+    
+    // Trabajos realizados
+    const trabajosRealizados = [];
+    if (maintenance.cambioAceite) trabajosRealizados.push('Cambio de Aceite');
+    if (maintenance.filtroAire) trabajosRealizados.push('Filtro de Aire');
+    if (maintenance.filtroAceite) trabajosRealizados.push('Filtro de Aceite');
+    if (maintenance.filtroCombustible) trabajosRealizados.push('Filtro de Combustible');
+    if (maintenance.revisionFrenos) trabajosRealizados.push('Revisión de Frenos');
+    if (maintenance.revisionNeumaticos) trabajosRealizados.push('Revisión de Neumáticos');
+    if (maintenance.revisionSuspension) trabajosRealizados.push('Revisión de Suspensión');
+    if (maintenance.revisionDireccion) trabajosRealizados.push('Revisión de Dirección');
+    if (maintenance.revisionBateria) trabajosRealizados.push('Revisión de Batería');
+    if (maintenance.revisionLuces) trabajosRealizados.push('Revisión de Luces');
+    if (maintenance.nivelLiquidos) trabajosRealizados.push('Nivel de Líquidos');
+    
+    if (trabajosRealizados.length > 0) {
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text('TRABAJOS REALIZADOS', 20, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'normal');
+      trabajosRealizados.forEach((trabajo, index) => {
+        doc.text(`✓ ${trabajo}`, 25, yPos);
+        yPos += 6;
+        
+        // Si llegamos al final de la página, crear nueva
+        if (yPos > pageHeight - 40) {
+          doc.addPage();
+          yPos = 30;
+        }
+      });
+    }
+    
+    yPos += 10;
+    
+    // Inspección de seguridad
+    const inspeccionData = [];
+    const mapEstado = (value) => {
+      if (value === 'bueno') return 'BUENO';
+      if (value === 'requiere_atencion') return 'REQUIERE ATENCIÓN';
+      if (value === 'malo') return 'MALO';
+      if (value === 'no_aplica') return 'NO APLICA';
+      return value || 'N/A';
+    };
+    
+    if (maintenance.gata && maintenance.gata !== 'no_aplica') {
+      inspeccionData.push(['Gata', mapEstado(maintenance.gata), maintenance.gataObservaciones || '-']);
+    }
+    if (maintenance.chalecoReflectante && maintenance.chalecoReflectante !== 'no_aplica') {
+      inspeccionData.push(['Chaleco Reflectante', mapEstado(maintenance.chalecoReflectante), maintenance.chalecoObservaciones || '-']);
+    }
+    if (maintenance.llaveRepuesto && maintenance.llaveRepuesto !== 'no_aplica') {
+      inspeccionData.push(['Llave de Repuesto', mapEstado(maintenance.llaveRepuesto), maintenance.llaveObservaciones || '-']);
+    }
+    if (maintenance.cinturon && maintenance.cinturon !== 'no_aplica') {
+      inspeccionData.push(['Cinturón de Seguridad', mapEstado(maintenance.cinturon), maintenance.cinturonObservaciones || '-']);
+    }
+    if (maintenance.parabrisas) {
+      inspeccionData.push(['Parabrisas', mapEstado(maintenance.parabrisas), maintenance.parabrisasObservaciones || '-']);
+    }
+    if (maintenance.lucesFreno) {
+      inspeccionData.push(['Luces de Freno', mapEstado(maintenance.lucesFreno), maintenance.lucesObservaciones || '-']);
+    }
+    if (maintenance.lucesDelanteras) {
+      inspeccionData.push(['Luces Delanteras', mapEstado(maintenance.lucesDelanteras), maintenance.lucesDObservaciones || '-']);
+    }
+    
+    if (inspeccionData.length > 0) {
+      // Verificar si necesitamos nueva página
+      if (yPos + 40 > pageHeight - 40) {
+        doc.addPage();
+        yPos = 30;
+      }
+      
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text('INSPECCIÓN DE SEGURIDAD', 20, yPos);
+      yPos += 10;
+      
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Elemento', 'Estado', 'Observaciones']],
+        body: inspeccionData,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [34, 197, 94],
+          textColor: 255,
+          fontSize: 10,
+          fontStyle: 'bold'
+        },
+        bodyStyles: {
+          fontSize: 9
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 40 },
+          2: { cellWidth: 90 }
+        }
+      });
+      
+      yPos = doc.lastAutoTable.finalY + 15;
+    }
+    
+    // Observaciones generales
+    if (maintenance.observacionesGenerales) {
+      if (yPos + 30 > pageHeight - 40) {
+        doc.addPage();
+        yPos = 30;
+      }
+      
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text('OBSERVACIONES GENERALES', 20, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      const lines = doc.splitTextToSize(maintenance.observacionesGenerales, 170);
+      lines.forEach(line => {
+        if (yPos > pageHeight - 30) {
+          doc.addPage();
+          yPos = 30;
+        }
+        doc.text(line, 20, yPos);
+        yPos += 6;
+      });
+    }
+    
+    // Próximo mantenimiento
+    if (maintenance.proximoMantenimientoFecha || maintenance.proximoMantenimientoKm) {
+      yPos += 10;
+      if (yPos + 20 > pageHeight - 40) {
+        doc.addPage();
+        yPos = 30;
+      }
+      
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(220, 38, 38);
+      doc.text('PRÓXIMO MANTENIMIENTO PROGRAMADO:', 20, yPos);
+      yPos += 8;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'normal');
+      if (maintenance.proximoMantenimientoFecha) {
+        doc.text(`Fecha: ${new Date(maintenance.proximoMantenimientoFecha).toLocaleDateString('es-CL')}`, 25, yPos);
+        yPos += 6;
+      }
+      if (maintenance.proximoMantenimientoKm) {
+        doc.text(`Kilometraje: ${maintenance.proximoMantenimientoKm.toLocaleString()} km`, 25, yPos);
+      }
+    }
+    
+    // Footer
+    doc.setFontSize(9);
+    doc.setTextColor(107, 114, 128);
+    doc.setFont(undefined, 'italic');
+    doc.text(`Reporte generado el ${fechaReporte} por ${currentUser.name || currentUser.email}`, 20, pageHeight - 20);
+    doc.text('Sistema MapaQuillón', pageWidth - 20, pageHeight - 20, { align: 'right' });
+    
+    // Guardar PDF
+    const fileName = `mantenimiento_${vehicle.patente}_${maintenance.fecha}_${Date.now()}.pdf`;
+    doc.save(fileName);
+  }
+}; // <-- Este cierre es importante para cerrar el objeto pdfExportService
 
 export default pdfExportService;

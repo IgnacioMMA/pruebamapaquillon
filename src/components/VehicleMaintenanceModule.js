@@ -28,6 +28,7 @@ const VehicleMaintenanceModule = ({
     currentUser,
     isMobile
 }) => {
+
     // Estados principales
     const [searchPatente, setSearchPatente] = useState('');
     const [searchFechaDesde, setSearchFechaDesde] = useState('');
@@ -103,8 +104,8 @@ const VehicleMaintenanceModule = ({
         // Filtro por patente
         if (searchPatente) {
             filtered = filtered.filter(m =>
-                m.vehiculoNombre?.toLowerCase().includes(searchPatente.toLowerCase()) ||
-                selectedVehicle?.patente?.toLowerCase().includes(searchPatente.toLowerCase())
+                m.vehiculoPatente?.toLowerCase().includes(searchPatente.toLowerCase()) ||
+                m.vehiculoNombre?.toLowerCase().includes(searchPatente.toLowerCase())
             );
         }
 
@@ -123,16 +124,22 @@ const VehicleMaintenanceModule = ({
         }
 
         setFilteredHistory(filtered);
-    }, [maintenanceHistory, searchPatente, searchFechaDesde, searchFechaHasta]);
+    }, [maintenanceHistory, searchPatente, searchFechaDesde, searchFechaHasta, selectedVehicle]);
 
 
+    // Cargar historial de mantenimiento cuando se selecciona un vehículo
     // Cargar historial de mantenimiento cuando se selecciona un vehículo
     useEffect(() => {
         if (selectedVehicle) {
             loadMaintenanceHistory(selectedVehicle.id);
+            // Resetear filtros cuando se selecciona un nuevo vehículo
+            setSearchPatente('');
+            setSearchFechaDesde('');
+            setSearchFechaHasta('');
         }
     }, [selectedVehicle]);
 
+    // Función para cargar historial
     // Función para cargar historial
     const loadMaintenanceHistory = (vehicleId) => {
         const historyRef = databaseRef(database, `mantenimientos/${vehicleId}`);
@@ -147,8 +154,10 @@ const VehicleMaintenanceModule = ({
                     }))
                     .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
                 setMaintenanceHistory(historyArray);
+                setFilteredHistory(historyArray); // AGREGAR ESTA LÍNEA
             } else {
                 setMaintenanceHistory([]);
+                setFilteredHistory([]); // AGREGAR ESTA LÍNEA
             }
         });
 
@@ -651,6 +660,8 @@ const VehicleMaintenanceModule = ({
                     <MaintenanceHistory
                         history={filteredHistory}
                         isMobile={isMobile}
+                        vehicle={selectedVehicle}
+                        currentUser={currentUser}
                     />
                 </>
             )}
@@ -659,7 +670,6 @@ const VehicleMaintenanceModule = ({
 };
 
 // Componente para selección de vehículo
-// Componente para selección de vehículo - MODIFICADO
 const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
     // Agregar estado para el filtro
     const [searchTerm, setSearchTerm] = useState('');
@@ -681,15 +691,15 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
     // Filtrar vehículos
     const filteredVehiculos = vehiculos.filter(vehicle => {
         // Filtro por búsqueda
-        const matchesSearch = 
+        const matchesSearch =
             vehicle.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             vehicle.patente?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             vehicle.marca?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             vehicle.modelo?.toLowerCase().includes(searchTerm.toLowerCase());
-        
+
         // Filtro por estado de mantenimiento
         const status = getMaintenanceStatus(vehicle);
-        const matchesStatus = 
+        const matchesStatus =
             filterStatus === 'todos' ||
             (filterStatus === 'vencido' && status === 'vencido') ||
             (filterStatus === 'urgente' && status === 'urgente') ||
@@ -716,7 +726,7 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
                 }}>
                     🔍 Buscar Vehículo
                 </h3>
-                
+
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 150px',
@@ -734,7 +744,7 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
                             fontSize: '14px'
                         }}
                     />
-                    
+
                     <select
                         value={filterStatus}
                         onChange={(e) => setFilterStatus(e.target.value)}
@@ -751,7 +761,7 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
                         <option value="proximo">📅 Mantenimiento próximo</option>
                         <option value="ok">✅ Mantenimiento al día</option>
                     </select>
-                    
+
                     <button
                         onClick={() => {
                             setSearchTerm('');
@@ -770,7 +780,7 @@ const VehicleSelectionGrid = ({ vehiculos, onSelectVehicle, isMobile }) => {
                         Limpiar
                     </button>
                 </div>
-                
+
                 <div style={{
                     marginTop: '10px',
                     fontSize: '13px',
@@ -1033,7 +1043,6 @@ const MaintenanceForm = ({
                     gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(250px, 1fr))',
                     gap: '15px'
                 }}>
-                    // En MaintenanceForm, después del campo de fecha agregar:
                     <div>
                         <label style={{
                             display: 'block',
@@ -1755,7 +1764,13 @@ const InspectionItem = ({
 };
 
 // Componente para el historial
-const MaintenanceHistory = ({ history, isMobile }) => {
+const MaintenanceHistory = ({ history, isMobile, vehicle, currentUser }) => {
+    console.log('Props recibidas en MaintenanceHistory:', {
+        history: history?.length,
+        isMobile,
+        vehicle,
+        currentUser
+    });
     if (history.length === 0) {
         return (
             <div style={{
@@ -1799,6 +1814,8 @@ const MaintenanceHistory = ({ history, isMobile }) => {
                         maintenance={maintenance}
                         isLast={index === history.length - 1}
                         isMobile={isMobile}
+                        vehicle={vehicle}       
+                        currentUser={currentUser}
                     />
                 ))}
             </div>
@@ -1807,8 +1824,43 @@ const MaintenanceHistory = ({ history, isMobile }) => {
 };
 
 // Componente para cada tarjeta de mantenimiento
-const MaintenanceCard = ({ maintenance, isLast, isMobile }) => {
+
+const MaintenanceCard = ({ maintenance, isLast, isMobile, vehicle, currentUser }) => {
     const [expanded, setExpanded] = useState(false);
+    console.log('Props en MaintenanceCard:', { vehicle, currentUser, maintenance });
+
+    const handleExportSingle = () => {
+        // Validar que existan los datos necesarios
+        if (!vehicle) {
+            console.error('Error: No se encontró información del vehículo');
+            alert('Error: No se puede exportar el PDF. Falta información del vehículo.');
+            return;
+        }
+
+        if (!currentUser) {
+            console.error('Error: No se encontró información del usuario');
+            alert('Error: No se puede exportar el PDF. Falta información del usuario.');
+            return;
+        }
+
+        try {
+            // Si el mantenimiento no tiene todos los datos del vehículo, usar los actuales
+            const maintenanceWithVehicle = {
+                ...maintenance,
+                vehiculoNombre: maintenance.vehiculoNombre || vehicle.nombre,
+                vehiculoPatente: maintenance.vehiculoPatente || vehicle.patente
+            };
+
+            pdfExportService.exportSingleMaintenanceRecord(
+                maintenanceWithVehicle,
+                vehicle,
+                currentUser
+            );
+        } catch (error) {
+            console.error('Error al exportar PDF:', error);
+            alert('Error al generar el PDF. Por favor, intente nuevamente.');
+        }
+    };
 
     return (
         <div style={{
@@ -1878,13 +1930,43 @@ const MaintenanceCard = ({ maintenance, isLast, isMobile }) => {
                         </div>
                     </div>
 
-                    <span style={{
-                        fontSize: '20px',
-                        transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
-                        transition: 'transform 0.2s'
-                    }}>
-                        ▼
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportSingle();
+                            }}
+                            style={{
+                                padding: '6px 12px',
+                                background: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#dc2626';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = '#ef4444';
+                            }}
+                        >
+                            📄 PDF
+                        </button>
+
+                        <span style={{
+                            fontSize: '20px',
+                            transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
+                            transition: 'transform 0.2s'
+                        }}>
+                            ▼
+                        </span>
+                    </div>
                 </div>
             </div>
 
