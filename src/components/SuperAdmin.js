@@ -2403,8 +2403,8 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
 
       {/* SIDEBAR MEJORADO MOBILE-FIRST */}
       <div style={{
-        width: isMobile ? '280px' : (isSidebarOpen ? '260px' : '60px'),
-        background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+        width: isMobile ? '280px' : (isSidebarOpen ? '260px' : '70px'),
+        background: 'linear-gradient(180deg, #1a1d2e 0%, #16213e 100%)',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         position: isMobile ? 'fixed' : 'relative',
         height: '100vh',
@@ -2419,8 +2419,8 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
       }}>
         {/* Header del Sidebar - Mobile First */}
         <div style={{
-          padding: isMobile ? '16px' : (isSidebarOpen ? '20px' : '20px 10px'),
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          padding: isMobile ? '20px' : (isSidebarOpen ? '24px' : '20px 10px'),
+          borderBottom: 'none',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -2684,72 +2684,77 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                   background: 'rgba(0,0,0,0.2)',
                   marginTop: '2px'
                 }}>
-                  {menu.submenu.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        if (item.view) {
-                          onViewChange(item.view);
-                        } else if (item.tab) {
-                          setActiveTab(item.tab);
-                        }
-                        if (isMobile) setIsSidebarOpen(false);
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: isMobile ? '12px 20px 12px 50px' : '10px 20px 10px 50px',
-                        background: (item.tab && activeTab === item.tab) ||
-                          (item.view && currentView === item.view)
-                          ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                        border: 'none',
-                        borderLeft: (item.tab && activeTab === item.tab) ||
-                          (item.view && currentView === item.view)
-                          ? '4px solid #3b82f6' : '4px solid transparent',
+                  {menu.submenu.map(item => (<button
+                    key={item.id}
+                    onClick={() => {
+                      if (item.view) {
+                        onViewChange(item.view);
+                      } else if (item.tab) {
+                        setActiveTab(item.tab);
+                      }
+                      if (isMobile) setIsSidebarOpen(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: isMobile ? '14px 20px 14px 20px' : '12px 20px 12px 20px',
+                      margin: '0 10px',
+                      width: 'calc(100% - 20px)',
+                      borderRadius: '10px',
+                      background: (item.tab && activeTab === item.tab) ||
+                        (item.view && currentView === item.view)
+                        ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                      border: 'none',
+                      borderLeft: (item.tab && activeTab === item.tab) ||
+                        (item.view && currentView === item.view)
+                        ? '4px solid #3b82f6' : '4px solid transparent',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      fontSize: isMobile ? '14px' : '13px',
+                      textAlign: 'left',
+                      minHeight: isMobile ? '44px' : '38px'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!((item.tab && activeTab === item.tab) ||
+                        (item.view && currentView === item.view))) {
+                        e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
+                        e.currentTarget.style.transform = 'translateX(5px)';
+                        e.currentTarget.style.transition = 'all 0.3s ease';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!((item.tab && activeTab === item.tab) ||
+                        (item.view && currentView === item.view))) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.transform = 'translateX(0)';
+                      }
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: isMobile ? '16px' : '14px' }}>{item.icon}</span>
+                      <span>{item.title}</span>
+                    </div>
+                    {item.badge > 0 && (
+                      <span style={{
+                        background: item.badgeType === 'alert' ?
+                          'linear-gradient(135deg, #ff6b6b, #ee5a24)' :
+                          'linear-gradient(135deg, #667eea, #764ba2)',
                         color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        fontSize: isMobile ? '14px' : '13px',
-                        textAlign: 'left',
-                        minHeight: isMobile ? '44px' : '38px'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!((item.tab && activeTab === item.tab) ||
-                          (item.view && currentView === item.view))) {
-                          e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                          e.currentTarget.style.transform = 'translateX(2px)';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!((item.tab && activeTab === item.tab) ||
-                          (item.view && currentView === item.view))) {
-                          e.currentTarget.style.background = 'transparent';
-                          e.currentTarget.style.transform = 'translateX(0)';
-                        }
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: isMobile ? '16px' : '14px' }}>{item.icon}</span>
-                        <span>{item.title}</span>
-                      </div>
-                      {item.badge > 0 && (
-                        <span style={{
-                          background: item.badgeType === 'alert' ? '#ef4444' : '#3b82f6',
-                          color: 'white',
-                          padding: isMobile ? '3px 8px' : '2px 6px',
-                          borderRadius: '12px',
-                          fontSize: isMobile ? '12px' : '11px',
-                          fontWeight: 'bold',
-                          minWidth: '24px',
-                          textAlign: 'center',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                        }}>
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: isMobile ? '12px' : '11px',
+                        fontWeight: 'bold',
+                        minWidth: '24px',
+                        textAlign: 'center',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                      }}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
                   ))}
                 </div>
               )}
@@ -2759,9 +2764,10 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
 
         {/* Footer del Sidebar - Mejorado para móvil */}
         <div style={{
-          padding: isMobile ? '16px' : (isSidebarOpen ? '20px' : '10px'),
-          borderTop: '1px solid rgba(255,255,255,0.1)',
-          background: 'rgba(0,0,0,0.2)'
+          padding: isMobile ? '20px' : (isSidebarOpen ? '24px' : '10px'),
+          borderTop: 'none',
+          background: 'transparent',
+          marginTop: 'auto'
         }}>
           {isSidebarOpen ? (
             <>
@@ -2812,9 +2818,11 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                   if (isMobile) setIsSidebarOpen(false);
                 }}
                 style={{
-                  width: '100%',
-                  padding: isMobile ? '12px' : '10px',
-                  background: '#ef4444',
+                  width: 'calc(100% - 20px)',
+                  margin: '0 10px',
+                  padding: isMobile ? '14px' : '12px',
+                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                  borderRadius: '10px',
                   color: 'white',
                   border: 'none',
                   borderRadius: isMobile ? '8px' : '6px',
