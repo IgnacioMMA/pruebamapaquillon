@@ -1,7 +1,7 @@
 {
-  "short_name": "MapaQuillón",
-  "name": "MapaQuillón",
-  "description": "Plataforma de gestión de flota y trabajadores de la Municipalidad de Quillón",
+  "short_name": "SCV",
+  "name": "SCV",
+  "description": "Sistema de control vehicular",
   "icons": [
     {
       "src": "escudo-quillon.png",

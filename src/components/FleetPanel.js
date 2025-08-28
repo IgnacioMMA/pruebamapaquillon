@@ -360,6 +360,7 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
     try {
       const vehiculo = vehiculos.find(v => v.id === vehiculoId);
       const trabajador = nuevoOperadorId ? trabajadores.find(t => t.id === nuevoOperadorId) : null;
+
       // Verificar si el vehículo está habilitado
       if (vehiculo?.habilitado === false) {
         setMessage({
@@ -369,6 +370,7 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
         setLoading(false);
         return;
       }
+
       if (trabajador?.habilitado === false) {
         setMessage({
           type: 'error',
@@ -378,8 +380,8 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
         return;
       }
 
-      // NUEVA VALIDACIÓN: Verificar licencias requeridas
-      if (nuevoOperadorId) {
+      // VALIDACIÓN: Verificar licencias requeridas
+      if (nuevoOperadorId && trabajador) {
         if (vehiculo?.licenciasRequeridas && vehiculo.licenciasRequeridas.length > 0) {
           const licenciasTrabajador = trabajador?.licenciasConducir || [];
           const tieneAlgunaLicenciaRequerida = vehiculo.licenciasRequeridas.some(
@@ -387,7 +389,6 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
           );
 
           if (!tieneAlgunaLicenciaRequerida) {
-            // Mostrar mensaje detallado de error
             const licenciasRequeridas = vehiculo.licenciasRequeridas.join(', ');
             const licenciasTrabajadorStr = licenciasTrabajador.length > 0
               ? licenciasTrabajador.join(', ')
@@ -413,44 +414,63 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
         }
       }
 
-      // Actualizar en Realtime Database
-      const vehiculoRef = ref(database, `vehiculos/${vehiculoId}`);
-      await update(vehiculoRef, {
-        operadorAsignado: nuevoOperadorId || null,
-        ultimaActualizacion: new Date().toISOString(),
-        actualizadoPor: currentUser.uid
-      });
+      // PASO 1: Limpiar asignación anterior del vehículo
+      const trabajadorAnterior = trabajadores.find(t =>
+        t.vehiculoAsignado === vehiculoId || t.vehicleId === vehiculoId
+      );
 
-      // Si se asignó un trabajador, actualizar su información también
-      if (nuevoOperadorId) {
-        const userRef = doc(firestore, 'users', nuevoOperadorId);
-        await updateDoc(userRef, {
-          vehicleId: vehiculoId,
-          updatedAt: new Date().toISOString()
-        });
-
-        // Actualizar en trabajadores
-        const trabajadorRef = ref(database, `trabajadores/${nuevoOperadorId}`);
-        await update(trabajadorRef, {
-          vehiculoAsignado: vehiculoId,
+      if (trabajadorAnterior && trabajadorAnterior.id !== nuevoOperadorId) {
+        const trabajadorAnteriorRef = ref(database, `trabajadores/${trabajadorAnterior.id}`);
+        await update(trabajadorAnteriorRef, {
+          vehiculoAsignado: null,
+          vehicleId: null,
           ultimaActualizacion: new Date().toISOString()
         });
       }
 
-      // Limpiar vehículo anterior si otro trabajador lo tenía
+      // PASO 2: Si hay nuevo operador, limpiar cualquier otro vehículo que pudiera tener
       if (nuevoOperadorId) {
-        vehiculos.forEach(async (v) => {
-          if (v.id !== vehiculoId && v.operadorAsignado === nuevoOperadorId) {
-            const otroVehiculoRef = ref(database, `vehiculos/${v.id}`);
-            await update(otroVehiculoRef, {
-              operadorAsignado: null,
-              ultimaActualizacion: new Date().toISOString()
-            });
-          }
+        // Buscar si el trabajador tenía otro vehículo asignado
+        const otrosVehiculos = vehiculos.filter(v =>
+          v.id !== vehiculoId &&
+          (v.trabajadorAsignado === nuevoOperadorId ||
+            v.operadorAsignado === nuevoOperadorId ||
+            v.asignadoA === nuevoOperadorId)
+        );
+
+        // Limpiar esos vehículos
+        for (const otroVehiculo of otrosVehiculos) {
+          const otroVehiculoRef = ref(database, `vehiculos/${otroVehiculo.id}`);
+          await update(otroVehiculoRef, {
+            trabajadorAsignado: null,
+            operadorAsignado: null,
+            asignadoA: null,
+            ultimaActualizacion: new Date().toISOString()
+          });
+        }
+      }
+
+      // PASO 3: Actualizar el vehículo
+      const vehiculoRef = ref(database, `vehiculos/${vehiculoId}`);
+      await update(vehiculoRef, {
+        trabajadorAsignado: nuevoOperadorId || null,
+        operadorAsignado: null,  // SIEMPRE limpiar campos antiguos
+        asignadoA: null,         // SIEMPRE limpiar campos antiguos
+        ultimaActualizacion: new Date().toISOString(),
+        actualizadoPor: currentUser.uid
+      });
+
+      // PASO 4: Si se asignó un nuevo trabajador, actualizar sus datos
+      if (nuevoOperadorId) {
+        const trabajadorRef = ref(database, `trabajadores/${nuevoOperadorId}`);
+        await update(trabajadorRef, {
+          vehiculoAsignado: vehiculoId,
+          vehicleId: vehiculoId, // Mantener por compatibilidad temporal
+          ultimaActualizacion: new Date().toISOString()
         });
       }
 
-      // NOTIFICACIONES - Ahora las variables están disponibles
+      // NOTIFICACIONES
       if (typeof createNotification === 'function') {
         // Notificación para el administrador
         await createNotification(currentUser.uid, {
@@ -469,6 +489,15 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
             mensaje: `Has sido asignado como operador del vehículo ${vehiculo?.nombre || ''}`
           });
         }
+
+        // Notificar al trabajador anterior si fue removido
+        if (trabajadorAnterior && trabajadorAnterior.id !== nuevoOperadorId) {
+          await createNotification(trabajadorAnterior.id, {
+            tipo: 'vehiculo_removido',
+            titulo: 'Asignación de vehículo removida',
+            mensaje: `Ya no eres el operador del vehículo ${vehiculo?.nombre || ''}`
+          });
+        }
       }
 
       setMessage({ type: 'success', text: '✅ Operador actualizado exitosamente' });
@@ -482,6 +511,103 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
       setLoading(false);
     }
   };
+  // En FleetPanel.js, agrega este botón temporalmente donde prefieras
+  <button
+    onClick={async () => {
+      if (!window.confirm('¿Limpiar todas las asignaciones de vehículos? Esto corregirá inconsistencias.')) return;
+
+      console.log('🧹 Iniciando limpieza de asignaciones...');
+
+      try {
+        const vehiculosRef = ref(database, 'vehiculos');
+        const snapshot = await get(vehiculosRef);
+        const vehiculosData = snapshot.val() || {};
+
+        for (const [id, vehiculo] of Object.entries(vehiculosData)) {
+          const updates = {};
+          let needsUpdate = false;
+
+          // Si tiene trabajadorAsignado, mantenerlo y limpiar los demás
+          if (vehiculo.trabajadorAsignado) {
+            updates.trabajadorAsignado = vehiculo.trabajadorAsignado;
+            updates.operadorAsignado = null;
+            updates.asignadoA = null;
+            needsUpdate = true;
+          }
+          // Si no tiene trabajadorAsignado pero tiene operadorAsignado, moverlo
+          else if (vehiculo.operadorAsignado) {
+            updates.trabajadorAsignado = vehiculo.operadorAsignado;
+            updates.operadorAsignado = null;
+            updates.asignadoA = null;
+            needsUpdate = true;
+          }
+          // Si solo tiene asignadoA, moverlo
+          else if (vehiculo.asignadoA) {
+            updates.trabajadorAsignado = vehiculo.asignadoA;
+            updates.operadorAsignado = null;
+            updates.asignadoA = null;
+            needsUpdate = true;
+          }
+
+          if (needsUpdate) {
+            console.log(`Actualizando vehículo ${id}...`);
+            await update(ref(database, `vehiculos/${id}`), {
+              ...updates,
+              ultimaActualizacion: new Date().toISOString()
+            });
+          }
+        }
+
+        alert('✅ Limpieza completada. Por favor recarga la página.');
+        window.location.reload();
+
+      } catch (error) {
+        console.error('Error en limpieza:', error);
+        alert('Error: ' + error.message);
+      }
+    }}
+    style={{
+      padding: '10px 20px',
+      background: '#f59e0b',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      margin: '10px'
+    }}
+  >
+    🧹 Limpiar Asignaciones (Ejecutar Una Vez)
+  </button>
+
+  const corregirAsignacionesVehiculos = async () => {
+    const vehiculosRef = ref(database, 'vehiculos');
+    const snapshot = await get(vehiculosRef);
+    const vehiculos = snapshot.val() || {};
+
+    for (const [id, vehiculo] of Object.entries(vehiculos)) {
+      // Si tiene asignación en campos incorrectos
+      if (vehiculo.operadorAsignado || vehiculo.asignadoA) {
+        const trabajadorId = vehiculo.operadorAsignado || vehiculo.asignadoA;
+
+        console.log(`Corrigiendo vehículo ${id}...`);
+
+        // Mover al campo correcto
+        await update(ref(database, `vehiculos/${id}`), {
+          trabajadorAsignado: trabajadorId,  // Campo correcto
+          operadorAsignado: null,  // Limpiar campo incorrecto
+          asignadoA: null,  // Limpiar campo incorrecto
+          ultimaActualizacion: new Date().toISOString()
+        });
+
+        console.log(`✅ Vehículo ${id} corregido`);
+      }
+    }
+
+    console.log('✅ Todas las asignaciones corregidas');
+  };
+
+  // Ejecutar la corrección
+  corregirAsignacionesVehiculos();
 
 
   // Abrir modal de edición
@@ -2397,10 +2523,9 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
           }}>
 
             {filteredVehiculos.map(vehiculo => {
-              const operador = users.find(u => u.id === vehiculo.operadorAsignado);
-              const isExpanded = expandedCards[vehiculo.id];
+              const operador = users.find(u => u.id === (vehiculo.trabajadorAsignado || vehiculo.operadorAsignado)); const isExpanded = expandedCards[vehiculo.id];
               const isEditingOperator = quickEditMode[vehiculo.id];
-              const isDisabled = vehiculo.habilitado === false; // AGREGAR ESTA LÍNEA
+              const isDisabled = vehiculo.habilitado === false;
 
 
               return (
@@ -2545,6 +2670,7 @@ const FleetPanel = ({ currentUser, onLogout, onViewChange, currentView = 'fleet'
                         ) : (
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             <span style={{ fontWeight: '500' }}>{operador?.name || 'Sin asignar'}</span>
+
                             <button
                               onClick={() => setQuickEditMode({ ...quickEditMode, [vehiculo.id]: true })}
                               style={{

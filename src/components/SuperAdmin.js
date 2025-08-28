@@ -1366,7 +1366,6 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         name: formData.name,
         role: formData.role,
         phone: formData.phone,
-        vehicleId: formData.vehicleId || null,
         localidad: formData.localidad || null,
         recoveryPin: btoa(formData.recoveryPin),
         rut: formData.rut || null,
@@ -1399,7 +1398,6 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
           email: formData.email,
           telefono: formData.phone || '',
           rut: formData.rut || null,
-          vehiculoAsignado: formData.vehicleId || null,
           estado: 'disponible',
           licenciaConducir: formData.licenciaConducir || null,
           licenciasConducir: formData.licenciasConducir || [],
@@ -1418,17 +1416,17 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         console.log('✅ Trabajador sincronizado en Realtime Database');
       }
 
-      // Si se asignó un vehículo, actualizar el vehículo también
-      if (formData.vehicleId && formData.role === 'trabajador') {
-        const vehiculoRef = databaseRef(database, `vehiculos/${formData.vehicleId}`);
-        await update(vehiculoRef, {
-          operadorAsignado: userCredential.user.uid,
-          ultimaActualizacion: new Date().toISOString(),
-          actualizadoPor: currentUser.uid
-        });
+      // // Si se asignó un vehículo, actualizar el vehículo también
+      // if (formData.vehicleId && formData.role === 'trabajador') {
+      //   const vehiculoRef = databaseRef(database, `vehiculos/${formData.vehicleId}`);
+      //   await update(vehiculoRef, {
+      //     operadorAsignado: userCredential.user.uid,
+      //     ultimaActualizacion: new Date().toISOString(),
+      //     actualizadoPor: currentUser.uid
+      //   });
 
-        console.log('✅ Vehículo actualizado con operador asignado');
-      }
+      //   console.log('✅ Vehículo actualizado con operador asignado');
+      // }
 
       // Mensaje de éxito
       setMessage({
@@ -1722,15 +1720,19 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         return;
       }
 
+      // Si es el usuario actual y es superadmin, actualizar también la sesión
+      const isCurrentUser = editingUser.id === currentUser.uid;
+
       const updateData = {
         name: formData.name,
-        role: formData.role,
         phone: formData.phone,
+        rut: formData.rut || null,
+        // Solo permitir cambio de rol si NO es el superadmin original
+        role: editingUser.isOriginalSuperAdmin ? editingUser.role : formData.role,
         vehicleId: formData.vehicleId || null,
         localidad: formData.localidad || null,
-        rut: formData.rut || null,
-        licenciaConducir: formData.licenciaConducir || null, // Mantener por compatibilidad
-        licenciasConducir: formData.licenciasConducir || [], // ACTUALIZAR ARRAY
+        licenciaConducir: formData.licenciaConducir || null,
+        licenciasConducir: formData.licenciasConducir || [],
         fechaVencimientoLicencia: formData.fechaVencimientoLicencia || null,
         observacionesLicencia: formData.observacionesLicencia || '',
         licenciaBloqueada: formData.licenciaBloqueada || false,
@@ -1749,10 +1751,19 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
 
       await updateDoc(doc(firestore, 'users', editingUser.id), updateData);
 
-      setMessage({
-        type: 'success',
-        text: `✅ Usuario ${formData.name} actualizado exitosamente`
-      });
+      // Si el usuario editó sus propios datos, actualizar el currentUser en el estado local
+      if (isCurrentUser) {
+        // Aquí puedes actualizar el estado del currentUser si lo manejas en un contexto global
+        setMessage({
+          type: 'success',
+          text: `✅ Tus datos han sido actualizados exitosamente`
+        });
+      } else {
+        setMessage({
+          type: 'success',
+          text: `✅ Usuario ${formData.name} actualizado exitosamente`
+        });
+      }
 
       // Resetear formulario
       setFormData({
@@ -2401,10 +2412,10 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         />
       )}
 
-      {/* SIDEBAR MEJORADO MOBILE-FIRST */}
+      {/* SIDEBAR MEJORADO CON NUEVO DISEÑO */}
       <div style={{
         width: isMobile ? '280px' : (isSidebarOpen ? '260px' : '70px'),
-        background: 'linear-gradient(180deg, #1a1d2e 0%, #16213e 100%)',
+        background: 'linear-gradient(180deg, #111827 0%, #1f2937 100%)',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         position: isMobile ? 'fixed' : 'relative',
         height: '100vh',
@@ -2413,473 +2424,497 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
         boxShadow: isMobile ? '4px 0 20px rgba(0,0,0,0.3)' : '2px 0 10px rgba(0,0,0,0.1)',
         display: 'flex',
         flexDirection: 'column',
-        overflowY: 'auto',
-        overflowX: 'visible', // CAMBIAR de 'hidden' a 'visible' para permitir que el dropdown se muestre
-        overflow: 'visible' // Para permitir que el dropdown sobresalga
+        overflow: 'visible'
       }}>
-        {/* Header del Sidebar - Mobile First */}
+        {/* Logo y Toggle Button */}
         <div style={{
-          padding: isMobile ? '20px' : (isSidebarOpen ? '24px' : '20px 10px'),
-          borderBottom: 'none',
+          padding: isSidebarOpen ? '20px' : '20px 10px',
+          borderBottom: '1px solid rgba(75, 85, 99, 0.3)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          minHeight: isMobile ? '60px' : '70px',
-          background: 'rgba(0,0,0,0.2)'
+          justifyContent: 'center',
+          minHeight: '80px'
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: isMobile ? '12px' : '10px',
-            flex: 1
-          }}>
-            {(isSidebarOpen || !isMobile) ? (
-              <>
-                <span style={{
-                  fontSize: isMobile ? '28px' : '24px',
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
-                }}>
-                  🔐
-                </span>
-                {isSidebarOpen && (
-                  <div>
-                    <h2 style={{
-                      margin: 0,
-                      color: 'white',
-                      fontSize: isMobile ? '18px' : '16px',
-                      fontWeight: '600',
-                      letterSpacing: '0.5px'
-                    }}>
-                      Super Admin
-                    </h2>
-                    <p style={{
-                      margin: 0,
-                      color: 'rgba(255,255,255,0.7)',
-                      fontSize: isMobile ? '13px' : '12px'
-                    }}>
-                      Panel de Control
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <span style={{
-                fontSize: '24px',
-                margin: '0 auto',
-                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
-              }}>
-                🔐
-              </span>
-            )}
-          </div>
-
-          {/* Botón de toggle - Diferente para móvil y desktop */}
-          {isMobile ? (
-            <button
-              onClick={() => setIsSidebarOpen(false)}
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                border: 'none',
-                color: 'white',
-                padding: '10px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s',
-                minWidth: '40px',
-                height: '40px',
-                fontSize: '20px'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                e.currentTarget.style.transform = 'scale(1.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                e.currentTarget.style.transform = 'scale(1)';
-              }}
-            >
-              ✕
-            </button>
-          ) : (
-            isSidebarOpen && (
-              <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                style={{
-                  background: 'rgba(255,255,255,0.1)',
-                  border: 'none',
-                  color: 'white',
-                  padding: '8px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
+          {isSidebarOpen ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  borderRadius: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  transition: 'all 0.2s',
-                  minWidth: '32px',
-                  height: '32px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                }}
-              >
-                ◀
-              </button>
-            )
-          )}
-        </div>
-
-        {/* Botón de expandir cuando está colapsado - Solo Desktop */}
-        {!isMobile && !isSidebarOpen && (
-          <div style={{ padding: '10px 5px' }}>
+                  fontSize: '20px',
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                }}>
+                  🔐
+                </div>
+                <div>
+                  <h2 style={{
+                    margin: 0,
+                    color: 'white',
+                    fontSize: '16px',
+                    fontWeight: '700',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Panel Admin
+                  </h2>
+                  <p style={{
+                    margin: 0,
+                    color: '#9ca3af',
+                    fontSize: '12px'
+                  }}>
+                    Sistema Municipal
+                  </p>
+                </div>
+              </div>
+              {!isMobile && (
+                <button
+                  onClick={() => setIsSidebarOpen(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#9ca3af',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'color 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = 'white'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = '#9ca3af'}
+                >
+                  <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                  </svg>
+                </button>
+              )}
+              {isMobile && (
+                <button
+                  onClick={() => setIsSidebarOpen(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: 'white',
+                    padding: '8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ) : (
             <button
               onClick={() => setIsSidebarOpen(true)}
               style={{
-                background: 'rgba(255,255,255,0.1)',
+                background: 'transparent',
                 border: 'none',
-                color: 'white',
-                padding: '8px',
-                borderRadius: '6px',
+                color: '#9ca3af',
                 cursor: 'pointer',
+                padding: '8px',
+                width: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: '100%',
-                transition: 'all 0.2s'
+                transition: 'color 0.2s'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-              }}
-              title="Expandir menú"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'white'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#9ca3af'}
             >
-              ▶
+              <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
             </button>
-          </div>
-        )}
-
-        {/* SECCIÓN DE NOTIFICACIONES - Mejorada para móvil */}
-        <div style={{
-          padding: isMobile ? '12px' : (isSidebarOpen ? '10px' : '10px 5px'),
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
-          position: 'relative', // IMPORTANTE: Agregar position relative
-          zIndex: 1000 // Asegurar que el contenedor tenga un z-index apropiado
-        }}>
-          <div style={{
-            background: 'rgba(255,255,255,0.1)',
-            borderRadius: isMobile ? '10px' : '8px',
-            padding: isMobile ? '12px' : (isSidebarOpen ? '10px' : '8px'),
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: isSidebarOpen ? 'flex-start' : 'center',
-            gap: '10px',
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            minHeight: isMobile ? '48px' : '40px',
-            position: 'relative', // IMPORTANTE: Agregar position relative
-            overflow: 'visible' // Importante: permitir que el dropdown se muestre fuera
-          }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-              if (!isMobile) { // Solo aplicar transform en desktop
-                e.currentTarget.style.transform = 'translateX(2px)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-              if (!isMobile) { // Solo aplicar transform en desktop
-                e.currentTarget.style.transform = 'translateX(0)';
-              }
-            }}
-          >
-            <div style={{
-              position: 'relative',
-              zIndex: 1 // Asegurar que el contenedor esté por debajo del dropdown
-            }}></div>
-            <NotificationSystem
-              currentUser={currentUser}
-              isMobile={isMobile}
-              inSidebar={true}
-              isCollapsed={!isSidebarOpen}
-              onNotificationCountChange={setNotificationCount}
-              sidebarZIndex={999} // Pasar el z-index del sidebar al componente
-            />
-            {isSidebarOpen && (
-              <div style={{ color: 'white', pointerEvents: 'none' }}>
-                {notificationCount > 0 && (
-                  <div style={{
-                    fontSize: isMobile ? '12px' : '11px',
-                    color: 'rgba(255,255,255,0.7)'
-                  }}>
-                    {notificationCount} sin leer
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          )}
         </div>
-        {/* Menú del Sidebar - Mejorado para móvil */}
+
+        {/* Menú de navegación */}
         <div style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: isMobile ? '12px 0' : '10px 0',
-          WebkitOverflowScrolling: 'touch'
+          padding: '12px 0'
         }}>
-          {menuItems.map(menu => (
-            <div key={menu.id} style={{ marginBottom: isMobile ? '8px' : '5px' }}>
-              <button
-                onClick={() => toggleMenu(menu.id)}
-                style={{
-                  width: '100%',
-                  padding: isMobile ? '14px 20px' : (isSidebarOpen ? '12px 20px' : '12px'),
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: isSidebarOpen ? 'space-between' : 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  fontSize: isMobile ? '15px' : '14px',
-                  minHeight: isMobile ? '50px' : '44px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                  e.currentTarget.style.transform = 'translateX(2px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.transform = 'translateX(0)';
-                }}
-                title={!isSidebarOpen ? menu.title : ''}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: isMobile ? '20px' : '18px' }}>{menu.icon}</span>
-                  {isSidebarOpen && (
-                    <span style={{ fontWeight: '500' }}>{menu.title}</span>
-                  )}
-                </div>
-                {isSidebarOpen && menu.submenu && (
-                  <span style={{
-                    fontSize: isMobile ? '14px' : '12px',
-                    transition: 'transform 0.2s',
-                    transform: expandedMenus.includes(menu.id) ? 'rotate(90deg)' : 'rotate(0)'
-                  }}>
-                    ▶
-                  </span>
-                )}
-              </button>
+          {/* Menú Principal */}
+          <div style={{ padding: '0 12px' }}>
+            {menuItems.map(menu => (
+              <div key={menu.id} style={{ marginBottom: '4px' }}>
+                {menu.submenu ? (
+                  <>
+                    <button
+                      onClick={() => toggleMenu(menu.id)}
+                      style={{
+                        width: '100%',
+                        padding: isSidebarOpen ? '12px 16px' : '12px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#9ca3af',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: isSidebarOpen ? 'space-between' : 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        borderRadius: '8px',
+                        fontSize: '14px'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(55, 65, 81, 0.5)';
+                        e.currentTarget.style.color = 'white';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = '#9ca3af';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '18px', minWidth: '18px' }}>{menu.icon}</span>
+                        {isSidebarOpen && (
+                          <span style={{ fontWeight: '500' }}>{menu.title}</span>
+                        )}
+                      </div>
+                      {isSidebarOpen && (
+                        <svg
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          style={{
+                            transition: 'transform 0.2s',
+                            transform: expandedMenus.includes(menu.id) ? 'rotate(90deg)' : 'rotate(0)'
+                          }}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      )}
+                    </button>
 
-              {/* Submenú con animación */}
-              {isSidebarOpen && expandedMenus.includes(menu.id) && menu.submenu && (
-                <div style={{
-                  background: 'rgba(0,0,0,0.2)',
-                  marginTop: '2px'
-                }}>
-                  {menu.submenu.map(item => (<button
-                    key={item.id}
+                    {/* Submenú */}
+                    {isSidebarOpen && expandedMenus.includes(menu.id) && (
+                      <div style={{
+                        marginTop: '4px',
+                        marginLeft: '8px',
+                        paddingLeft: '20px',
+                        borderLeft: '2px solid rgba(75, 85, 99, 0.3)'
+                      }}>
+                        {menu.submenu.map(item => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              if (item.view) {
+                                onViewChange(item.view);
+                              } else if (item.tab) {
+                                setActiveTab(item.tab);
+                              }
+                              if (isMobile) setIsSidebarOpen(false);
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 12px',
+                              marginBottom: '2px',
+                              background: (item.tab && activeTab === item.tab) ||
+                                (item.view && currentView === item.view)
+                                ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                              border: 'none',
+                              borderRadius: '6px',
+                              color: (item.tab && activeTab === item.tab) ||
+                                (item.view && currentView === item.view)
+                                ? '#818cf8' : '#9ca3af',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              fontSize: '13px',
+                              textAlign: 'left',
+                              position: 'relative'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!((item.tab && activeTab === item.tab) ||
+                                (item.view && currentView === item.view))) {
+                                e.currentTarget.style.background = 'rgba(55, 65, 81, 0.3)';
+                                e.currentTarget.style.color = 'white';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!((item.tab && activeTab === item.tab) ||
+                                (item.view && currentView === item.view))) {
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.color = '#9ca3af';
+                              }
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '14px' }}>{item.icon}</span>
+                              <span>{item.title}</span>
+                            </div>
+                            {item.badge > 0 && (
+                              <span style={{
+                                background: item.badgeType === 'alert'
+                                  ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                                  : 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                color: 'white',
+                                padding: '2px 6px',
+                                borderRadius: '12px',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                minWidth: '20px',
+                                textAlign: 'center'
+                              }}>
+                                {item.badge}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <button
                     onClick={() => {
-                      if (item.view) {
-                        onViewChange(item.view);
-                      } else if (item.tab) {
-                        setActiveTab(item.tab);
+                      if (menu.view) {
+                        onViewChange(menu.view);
+                      } else if (menu.tab) {
+                        setActiveTab(menu.tab);
                       }
                       if (isMobile) setIsSidebarOpen(false);
                     }}
                     style={{
                       width: '100%',
-                      padding: isMobile ? '14px 20px 14px 20px' : '12px 20px 12px 20px',
-                      margin: '0 10px',
-                      width: 'calc(100% - 20px)',
-                      borderRadius: '10px',
-                      background: (item.tab && activeTab === item.tab) ||
-                        (item.view && currentView === item.view)
-                        ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
+                      padding: isSidebarOpen ? '12px 16px' : '12px',
+                      background: 'transparent',
                       border: 'none',
-                      borderLeft: (item.tab && activeTab === item.tab) ||
-                        (item.view && currentView === item.view)
-                        ? '4px solid #3b82f6' : '4px solid transparent',
-                      color: 'white',
+                      color: '#9ca3af',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
+                      justifyContent: isSidebarOpen ? 'flex-start' : 'center',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
-                      fontSize: isMobile ? '14px' : '13px',
-                      textAlign: 'left',
-                      minHeight: isMobile ? '44px' : '38px'
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      gap: '12px'
                     }}
                     onMouseEnter={(e) => {
-                      if (!((item.tab && activeTab === item.tab) ||
-                        (item.view && currentView === item.view))) {
-                        e.currentTarget.style.background = 'rgba(102, 126, 234, 0.1)';
-                        e.currentTarget.style.transform = 'translateX(5px)';
-                        e.currentTarget.style.transition = 'all 0.3s ease';
-                      }
+                      e.currentTarget.style.background = 'rgba(55, 65, 81, 0.5)';
+                      e.currentTarget.style.color = 'white';
                     }}
                     onMouseLeave={(e) => {
-                      if (!((item.tab && activeTab === item.tab) ||
-                        (item.view && currentView === item.view))) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.transform = 'translateX(0)';
-                      }
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = '#9ca3af';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: isMobile ? '16px' : '14px' }}>{item.icon}</span>
-                      <span>{item.title}</span>
-                    </div>
-                    {item.badge > 0 && (
-                      <span style={{
-                        background: item.badgeType === 'alert' ?
-                          'linear-gradient(135deg, #ff6b6b, #ee5a24)' :
-                          'linear-gradient(135deg, #667eea, #764ba2)',
-                        color: 'white',
-                        padding: '4px 10px',
-                        borderRadius: '20px',
-                        fontSize: isMobile ? '12px' : '11px',
-                        fontWeight: 'bold',
-                        minWidth: '24px',
-                        textAlign: 'center',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                      }}>
-                        {item.badge}
-                      </span>
-                    )}
+                    <span style={{ fontSize: '18px', minWidth: '18px' }}>{menu.icon}</span>
+                    {isSidebarOpen && <span>{menu.title}</span>}
                   </button>
-                  ))}
-                </div>
-              )}
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Sección de Notificaciones */}
+          <div style={{
+            marginTop: '20px',
+            padding: '0 12px',
+            borderTop: '1px solid rgba(75, 85, 99, 0.3)',
+            paddingTop: '20px'
+          }}>
+            <div style={{
+              position: 'relative',
+              overflow: 'visible'
+            }}>
+              <NotificationSystem
+                currentUser={currentUser}
+                isMobile={isMobile}
+                inSidebar={true}
+                isCollapsed={!isSidebarOpen}
+                onNotificationCountChange={setNotificationCount}
+                sidebarZIndex={999}
+              />
             </div>
-          ))}
+          </div>
         </div>
 
-        {/* Footer del Sidebar - Mejorado para móvil */}
+        {/* Footer con información del usuario */}
         <div style={{
-          padding: isMobile ? '20px' : (isSidebarOpen ? '24px' : '10px'),
-          borderTop: 'none',
-          background: 'transparent',
-          marginTop: 'auto'
+          borderTop: '1px solid rgba(75, 85, 99, 0.3)',
+          padding: isSidebarOpen ? '16px' : '12px',
+          background: 'rgba(17, 24, 39, 0.5)'
         }}>
           {isSidebarOpen ? (
-            <>
+            <div>
+              {/* Información del usuario */}
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: isMobile ? '12px' : '10px',
-                marginBottom: '15px',
-                color: 'white'
+                gap: '12px',
+                marginBottom: '12px',
+                padding: '12px',
+                background: 'rgba(55, 65, 81, 0.3)',
+                borderRadius: '8px'
               }}>
                 <div style={{
-                  width: isMobile ? '44px' : '40px',
-                  height: isMobile ? '44px' : '40px',
-                  background: 'rgba(255,255,255,0.2)',
+                  width: '40px',
+                  height: '40px',
+                  background: currentUser.role === 'superadmin'
+                    ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                    : 'linear-gradient(135deg, #6366f1, #4f46e5)',
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: isMobile ? '20px' : '18px',
+                  fontSize: '18px',
+                  color: 'white',
+                  fontWeight: 'bold',
                   flexShrink: 0
                 }}>
-                  👤
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : '👤'}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontSize: isMobile ? '15px' : '14px',
-                    fontWeight: '500',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: 'white',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap'
                   }}>
-                    {currentUser.name || 'Super Admin'}
+                    {currentUser.name || 'Usuario'}
                   </div>
                   <div style={{
-                    fontSize: isMobile ? '13px' : '12px',
-                    opacity: 0.7,
+                    fontSize: '12px',
+                    color: '#9ca3af',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap'
                   }}>
                     {currentUser.email}
                   </div>
+                  <div style={{
+                    fontSize: '11px',
+                    marginTop: '2px',
+                    padding: '2px 6px',
+                    background: currentUser.role === 'superadmin'
+                      ? 'rgba(245, 158, 11, 0.2)'
+                      : 'rgba(99, 102, 241, 0.2)',
+                    color: currentUser.role === 'superadmin'
+                      ? '#fbbf24'
+                      : '#818cf8',
+                    borderRadius: '4px',
+                    display: 'inline-block',
+                    fontWeight: '600'
+                  }}>
+                    {currentUser.role === 'superadmin' ? '🔐 Super Admin' :
+                      currentUser.role === 'admin' ? '👨‍💼 Administrador' :
+                        currentUser.role === 'monitor' ? '📊 Monitor' : '👷 Trabajador'}
+                  </div>
                 </div>
               </div>
+
+              {/* Botón de cerrar sesión */}
               <button
-                onClick={() => {
-                  onLogout();
-                  if (isMobile) setIsSidebarOpen(false);
-                }}
+                onClick={onLogout}
                 style={{
-                  width: 'calc(100% - 20px)',
-                  margin: '0 10px',
-                  padding: isMobile ? '14px' : '12px',
-                  background: 'linear-gradient(135deg, #667eea, #764ba2)',
-                  borderRadius: '10px',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: isMobile ? '8px' : '6px',
+                  width: '100%',
+                  padding: '12px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#f87171',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: '8px',
                   cursor: 'pointer',
-                  fontSize: isMobile ? '15px' : '14px',
+                  fontSize: '14px',
                   fontWeight: '500',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  transition: 'all 0.2s',
-                  minHeight: isMobile ? '44px' : '40px'
+                  transition: 'all 0.2s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#dc2626';
-                  e.currentTarget.style.transform = 'scale(1.02)';
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#ef4444';
-                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.2)';
                 }}
               >
-                🚪 Cerrar Sesión
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Cerrar Sesión
               </button>
-            </>
+            </div>
           ) : (
-            <button
-              onClick={onLogout}
-              style={{
-                width: '40px',
-                height: '40px',
-                background: '#ef4444',
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              {/* Avatar compacto */}
+              <div style={{
+                width: '36px',
+                height: '36px',
+                background: currentUser.role === 'superadmin'
+                  ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                  : 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '16px',
                 color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '18px',
-                margin: '0 auto',
-                display: 'block',
-                transition: 'all 0.2s'
+                fontWeight: 'bold',
+                cursor: 'pointer'
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#dc2626';
-                e.currentTarget.style.transform = 'scale(1.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#ef4444';
-                e.currentTarget.style.transform = 'scale(1)';
-              }}
-              title="Cerrar Sesión"
-            >
-              🚪
-            </button>
+                onClick={() => setIsSidebarOpen(true)}
+                title={currentUser.name || 'Usuario'}
+              >
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : '👤'}
+              </div>
+
+              {/* Botón de logout compacto */}
+              <button
+                onClick={onLogout}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#f87171',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s'
+                }}
+                title="Cerrar Sesión"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                }}
+              >
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </div>
           )}
         </div>
       </div>
-
       {/* Contenido Principal */}
       <div style={{
         flex: 1,
@@ -3841,17 +3876,29 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                               fontWeight: '500'
                             }}>
                               Rol *
+                              {editingUser?.isOriginalSuperAdmin && (
+                                <span style={{
+                                  marginLeft: '8px',
+                                  fontSize: '11px',
+                                  color: '#f59e0b'
+                                }}>
+                                  (No modificable - Superadmin fundador)
+                                </span>
+                              )}
                             </label>
                             <select
                               required
                               value={formData.role}
                               onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                              disabled={editingUser?.isOriginalSuperAdmin}
                               style={{
                                 width: '100%',
                                 padding: '10px',
                                 border: '1px solid #d1d5db',
                                 borderRadius: '6px',
-                                fontSize: '14px'
+                                fontSize: '14px',
+                                background: editingUser?.isOriginalSuperAdmin ? '#f3f4f6' : 'white',
+                                cursor: editingUser?.isOriginalSuperAdmin ? 'not-allowed' : 'pointer'
                               }}
                             >
                               <option value="trabajador">👷 Trabajador</option>
@@ -4703,6 +4750,18 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                 <td style={{ padding: '16px 20px', fontSize: '14px', color: '#1f2937' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     {user.name}
+                                    {user.isOriginalSuperAdmin && (
+                                      <span style={{
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        fontSize: '10px',
+                                        fontWeight: '600',
+                                        background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+                                        color: 'white'
+                                      }}>
+                                        👑 Original
+                                      </span>
+                                    )}
                                     {user.habilitado === false && (
                                       <span style={{
                                         padding: '2px 6px',
@@ -4717,6 +4776,7 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                     )}
                                   </div>
                                 </td>
+
                                 <td style={{ padding: '16px 20px', fontSize: '14px', color: '#6b7280' }}>
                                   {user.email}
                                 </td>
@@ -4824,57 +4884,20 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                   padding: isMobile ? '12px 10px' : '16px 20px',
                                   textAlign: 'center'
                                 }}>
-                                  {user.id !== currentUser.uid ? (
-                                    <div style={{
-                                      display: 'flex',
-                                      gap: isMobile ? '4px' : '8px',
-                                      justifyContent: 'center',
-                                      flexWrap: isMobile ? 'wrap' : 'nowrap'
-                                    }}>
-                                      {/* Botón de habilitar/deshabilitar */}
-                                      <button
-                                        onClick={() => handleToggleUserStatus(user.id, user.email)}
-                                        style={{
-                                          padding: isMobile ? '5px 8px' : '6px 12px',
-                                          background: user.habilitado !== false ? '#f59e0b' : '#22c55e',
-                                          color: 'white',
-                                          border: 'none',
-                                          borderRadius: '4px',
-                                          fontSize: isMobile ? '11px' : '12px',
-                                          cursor: 'pointer',
-                                          whiteSpace: 'nowrap'
-                                        }}
-                                        title={user.habilitado !== false ? 'Deshabilitar usuario' : 'Habilitar usuario'}
-                                      >
-                                        {isMobile ?
-                                          (user.habilitado !== false ? '🚫' : '✅') :
-                                          (user.habilitado !== false ? '🚫 Deshabilitar' : '✅ Habilitar')
-                                        }
-                                      </button>
-
-                                      <button
-                                        onClick={() => handleEditUser(user)}
-                                        style={{
-                                          padding: isMobile ? '5px 8px' : '6px 12px',
-                                          background: '#3b82f6',
-                                          color: 'white',
-                                          border: 'none',
-                                          borderRadius: '4px',
-                                          fontSize: isMobile ? '11px' : '12px',
-                                          cursor: 'pointer',
-                                          whiteSpace: 'nowrap'
-                                        }}
-                                      >
-                                        {isMobile ? '✏️' : '✏️ Editar'}
-                                      </button>
-
-                                      {/* Solo mostrar eliminar si está deshabilitado */}
-                                      {user.habilitado === false ? (
+                                  <div style={{
+                                    display: 'flex',
+                                    gap: isMobile ? '4px' : '8px',
+                                    justifyContent: 'center',
+                                    flexWrap: isMobile ? 'wrap' : 'nowrap'
+                                  }}>
+                                    {/* Si es el usuario actual, mostrar botón de editar sus datos */}
+                                    {user.id === currentUser.uid ? (
+                                      <>
                                         <button
-                                          onClick={() => handleDeleteUser(user.id)}
+                                          onClick={() => handleEditUser(user)}
                                           style={{
                                             padding: isMobile ? '5px 8px' : '6px 12px',
-                                            background: '#ef4444',
+                                            background: '#3b82f6',
                                             color: 'white',
                                             border: 'none',
                                             borderRadius: '4px',
@@ -4883,54 +4906,141 @@ const SuperAdmin = ({ currentUser, onLogout, onViewChange, currentView = 'admin'
                                             whiteSpace: 'nowrap'
                                           }}
                                         >
-                                          {isMobile ? '🗑️' : '🗑️ Eliminar'}
+                                          {isMobile ? '✏️' : '✏️ Editar mis datos'}
                                         </button>
-                                      ) : (
                                         <button
-                                          disabled
+                                          onClick={() => handleExportSingleUserPDF(user)}
                                           style={{
                                             padding: isMobile ? '5px 8px' : '6px 12px',
-                                            background: '#d1d5db',
-                                            color: '#9ca3af',
+                                            background: '#10b981',
+                                            color: 'white',
                                             border: 'none',
                                             borderRadius: '4px',
                                             fontSize: isMobile ? '11px' : '12px',
-                                            cursor: 'not-allowed',
+                                            cursor: 'pointer',
                                             whiteSpace: 'nowrap'
                                           }}
-                                          title="Deshabilitar usuario primero para eliminar"
                                         >
-                                          {isMobile ? '🗑️' : '🗑️ Eliminar'}
+                                          {isMobile ? '📄' : '📄 Exportar'}
                                         </button>
-                                      )}
-
-                                      <button
-                                        onClick={() => handleExportSingleUserPDF(user)}
-                                        style={{
-                                          padding: isMobile ? '5px 8px' : '6px 12px',
-                                          background: '#10b981',
-                                          color: 'white',
-                                          border: 'none',
+                                        <span style={{
+                                          padding: '6px 12px',
+                                          background: '#e5e7eb',
+                                          color: '#6b7280',
                                           borderRadius: '4px',
-                                          fontSize: isMobile ? '11px' : '12px',
-                                          cursor: 'pointer',
-                                          whiteSpace: 'nowrap'
-                                        }}
-                                      >
-                                        {isMobile ? '📄' : '📄 Exportar'}
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <span style={{
-                                      padding: '6px 12px',
-                                      background: '#e5e7eb',
-                                      color: '#6b7280',
-                                      borderRadius: '4px',
-                                      fontSize: '12px'
-                                    }}>
-                                      Usuario actual
-                                    </span>
-                                  )}
+                                          fontSize: '12px'
+                                        }}>
+                                          Usuario actual
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        {/* Botón de habilitar/deshabilitar - NO disponible para superadmin original */}
+                                        {!user.isOriginalSuperAdmin && (
+                                          <button
+                                            onClick={() => handleToggleUserStatus(user.id, user.email)}
+                                            style={{
+                                              padding: isMobile ? '5px 8px' : '6px 12px',
+                                              background: user.habilitado !== false ? '#f59e0b' : '#22c55e',
+                                              color: 'white',
+                                              border: 'none',
+                                              borderRadius: '4px',
+                                              fontSize: isMobile ? '11px' : '12px',
+                                              cursor: 'pointer',
+                                              whiteSpace: 'nowrap'
+                                            }}
+                                            title={user.habilitado !== false ? 'Deshabilitar usuario' : 'Habilitar usuario'}
+                                          >
+                                            {isMobile ?
+                                              (user.habilitado !== false ? '🚫' : '✅') :
+                                              (user.habilitado !== false ? '🚫 Deshabilitar' : '✅ Habilitar')
+                                            }
+                                          </button>
+                                        )}
+
+                                        <button
+                                          onClick={() => handleEditUser(user)}
+                                          style={{
+                                            padding: isMobile ? '5px 8px' : '6px 12px',
+                                            background: '#3b82f6',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            fontSize: isMobile ? '11px' : '12px',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap'
+                                          }}
+                                        >
+                                          {isMobile ? '✏️' : '✏️ Editar'}
+                                        </button>
+
+                                        {/* Botón de eliminar - NO disponible para superadmin original */}
+                                        {!user.isOriginalSuperAdmin ? (
+                                          user.habilitado === false ? (
+                                            <button
+                                              onClick={() => handleDeleteUser(user.id)}
+                                              style={{
+                                                padding: isMobile ? '5px 8px' : '6px 12px',
+                                                background: '#ef4444',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '4px',
+                                                fontSize: isMobile ? '11px' : '12px',
+                                                cursor: 'pointer',
+                                                whiteSpace: 'nowrap'
+                                              }}
+                                            >
+                                              {isMobile ? '🗑️' : '🗑️ Eliminar'}
+                                            </button>
+                                          ) : (
+                                            <button
+                                              disabled
+                                              style={{
+                                                padding: isMobile ? '5px 8px' : '6px 12px',
+                                                background: '#d1d5db',
+                                                color: '#9ca3af',
+                                                border: 'none',
+                                                borderRadius: '4px',
+                                                fontSize: isMobile ? '11px' : '12px',
+                                                cursor: 'not-allowed',
+                                                whiteSpace: 'nowrap'
+                                              }}
+                                              title="Deshabilitar usuario primero para eliminar"
+                                            >
+                                              {isMobile ? '🗑️' : '🗑️ Eliminar'}
+                                            </button>
+                                          )
+                                        ) : (
+                                          <span style={{
+                                            padding: '6px 12px',
+                                            background: '#fbbf24',
+                                            color: '#92400e',
+                                            borderRadius: '4px',
+                                            fontSize: '11px',
+                                            fontWeight: '600'
+                                          }}>
+                                            🔒 Protegido
+                                          </span>
+                                        )}
+
+                                        <button
+                                          onClick={() => handleExportSingleUserPDF(user)}
+                                          style={{
+                                            padding: isMobile ? '5px 8px' : '6px 12px',
+                                            background: '#10b981',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            fontSize: isMobile ? '11px' : '12px',
+                                            cursor: 'pointer',
+                                            whiteSpace: 'nowrap'
+                                          }}
+                                        >
+                                          {isMobile ? '📄' : '📄 Exportar'}
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );

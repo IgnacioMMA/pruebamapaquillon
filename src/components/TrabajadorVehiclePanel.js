@@ -1,14 +1,17 @@
 // src/components/TrabajadorVehiclePanel.js
 import React, { useState, useEffect } from 'react';
 import { vehiculosService, trabajadoresService } from '../services/firebaseservices';
+import { database } from '../config/firebase';
+import { ref as databaseRef, update, get } from 'firebase/database';
 
 const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
+  // ... resto del código
   const [vehiculoAsignado, setVehiculoAsignado] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingVehiculo, setLoadingVehiculo] = useState(true); // NUEVO: Estado de carga inicial
   const [message, setMessage] = useState(null);
   const [trabajadorData, setTrabajadorData] = useState(null);
-  
+
   // Estados del formulario de viaje
   const [formViaje, setFormViaje] = useState({
     fechaSalida: new Date().toISOString().split('T')[0], // Fecha de hoy
@@ -18,6 +21,9 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
     motivoViaje: 'trabajo', // trabajo, emergencia, mantenimiento
     observaciones: ''
   });
+  const [showFinalizarModal, setShowFinalizarModal] = useState(false);
+  const [kilometrajeLlegada, setKilometrajeLlegada] = useState('');
+  const [errorKmLlegada, setErrorKmLlegada] = useState('');
 
   // Estado para el viaje activo
   const [viajeActivo, setViajeActivo] = useState(null);
@@ -25,18 +31,18 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
   // Cargar datos del trabajador y su vehículo
   useEffect(() => {
     let mounted = true;
-    
+
     const loadData = async () => {
       console.log('🔄 Iniciando carga de vehículo para:', currentUser.uid);
       setLoadingVehiculo(true);
-      
+
       try {
         // Esperar un momento para que Firebase se estabilice
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         // Verificar si el componente sigue montado
         if (!mounted) return;
-        
+
         // Obtener datos del trabajador
         let trabajadorData = null;
         await new Promise((resolve) => {
@@ -52,67 +58,104 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
               resolve();
             }
           );
-          
+
           // Timeout para evitar espera infinita
           setTimeout(() => resolve(), 3000);
         });
-        
+
         // Verificar vehículos
         await new Promise((resolve) => {
           const unsubscribe = vehiculosService.subscribeToVehiculos((vehiculosData) => {
             console.log('🚛 Total de vehículos:', vehiculosData.length);
-            
+
             // Buscar vehículo asignado
+            // Buscar vehículo asignado - SOLO buscar en trabajadorAsignado
             let vehiculoEncontrado = null;
-            
-            // Buscar por diferentes campos
+
+            // IMPORTANTE: Solo buscar en el campo correcto para evitar falsos positivos
             vehiculoEncontrado = vehiculosData.find(v => {
-              const asignado = v.asignadoA === currentUser.uid || 
-                               v.operadorAsignado === currentUser.uid ||
-                               v.trabajadorAsignado === currentUser.uid;
-              
+              // Solo aceptar si está específicamente asignado como trabajadorAsignado
+              const asignado = v.trabajadorAsignado === currentUser.uid;
+
               if (asignado) {
-                console.log('✅ Vehículo encontrado por asignación directa:', v.nombre);
+                console.log('✅ Vehículo encontrado correctamente asignado:', v.nombre);
               }
+              // Botón temporal para limpiar campos legacy
+              <button
+                onClick={async () => {
+                  try {
+                    const vehiculoRef = databaseRef(database, `vehiculos/${vehiculoAsignado.id}`);
+                    await update(vehiculoRef, {
+                      operadorAsignado: null,  // Limpiar campo antiguo
+                      asignadoA: null,  // Limpiar por si acaso
+                      ultimaActualizacion: new Date().toISOString()
+                    });
+
+                    alert('✅ Campos antiguos limpiados');
+                    window.location.reload();
+                  } catch (error) {
+                    console.error('Error:', error);
+                  }
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                Limpiar campos antiguos (ejecutar una vez)
+              </button>
+
+              // DEBUG: Mostrar si hay asignaciones incorrectas
+              if (v.asignadoA === currentUser.uid || v.operadorAsignado === currentUser.uid) {
+                console.log('⚠️ ADVERTENCIA: Vehículo mal asignado en campos incorrectos:', v.nombre);
+                console.log('- asignadoA:', v.asignadoA);
+                console.log('- operadorAsignado:', v.operadorAsignado);
+                console.log('- trabajadorAsignado:', v.trabajadorAsignado);
+                // NO retornar true aquí - ignorar estas asignaciones incorrectas
+              }
+              //dame el codigo separado con
               return asignado;
             });
-            
-            // Si no encuentra, buscar por ID en datos del trabajador
+
+            // NO buscar en otros campos para evitar falsos positivos
+            console.log('Resultado de búsqueda:', vehiculoEncontrado ? 'Vehículo encontrado' : 'NO hay vehículo asignado');
+            // NO BUSCAR EN NINGÚN OTRO CAMPO - Comentar o eliminar estas líneas:
+            /*
             if (!vehiculoEncontrado && trabajadorData?.vehiculoAsignado) {
-              vehiculoEncontrado = vehiculosData.find(v => v.id === trabajadorData.vehiculoAsignado);
-              if (vehiculoEncontrado) {
-                console.log('✅ Vehículo encontrado por ID del trabajador:', vehiculoEncontrado.nombre);
-              }
+              // NO buscar aquí
             }
             
-            // Si no encuentra, buscar por vehicleId del usuario
             if (!vehiculoEncontrado && currentUser.vehicleId) {
-              vehiculoEncontrado = vehiculosData.find(v => v.id === currentUser.vehicleId);
-              if (vehiculoEncontrado) {
-                console.log('✅ Vehículo encontrado por vehicleId:', vehiculoEncontrado.nombre);
-              }
+              // NO buscar aquí tampoco
             }
-            
+            */
+
+            console.log('Resultado final:', vehiculoEncontrado ? `Vehículo asignado: ${vehiculoEncontrado.nombre}` : 'NO hay vehículo asignado');
             if (vehiculoEncontrado) {
               console.log('✅ VEHÍCULO ASIGNADO:', vehiculoEncontrado);
               setVehiculoAsignado(vehiculoEncontrado);
               setFormViaje(prev => ({
                 ...prev,
-                kilometrajeSalida: vehiculoEncontrado.kilometraje?.toString() || ''
+                kilometrajeSalida: '' // Dejar vacío en lugar de prellenar
               }));
             } else {
               console.log('❌ NO HAY VEHÍCULO ASIGNADO');
               setVehiculoAsignado(null);
             }
-            
+
             // Solo cambiar loading a false después de verificar todo
             if (mounted) {
               setLoadingVehiculo(false);
             }
-            
+
             resolve();
           });
-          
+
           // Timeout para evitar espera infinita
           setTimeout(() => {
             if (mounted) {
@@ -121,7 +164,7 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
             resolve();
           }, 3000);
         });
-        
+
       } catch (error) {
         console.error('❌ Error al cargar datos:', error);
         if (mounted) {
@@ -134,9 +177,9 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
         }
       }
     };
-    
+
     loadData();
-    
+
     // Cleanup function
     return () => {
       mounted = false;
@@ -152,8 +195,25 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
     }
 
     if (!formViaje.kilometrajeSalida) {
-      setMessage({ type: 'error', text: '⚠️ Debes indicar el kilometraje actual' });
+      setMessage({ type: 'error', text: '⚠️ Debes indicar el kilometraje actual del vehículo' });
       return;
+    }
+    // NUEVA VALIDACIÓN: Verificar que el kilometraje no sea menor al registrado
+    const kilometrajeActual = vehiculoAsignado.kilometraje || 0;
+    const kilometrajeSalida = parseInt(formViaje.kilometrajeSalida);
+    if (kilometrajeSalida < kilometrajeActual) {
+      setMessage({
+        type: 'error',
+        text: `⚠️ El kilometraje no puede ser menor al registrado (${kilometrajeActual.toLocaleString()} km)`
+      });
+      return;
+    }
+    // Si el kilometraje es mayor al actual, preguntar confirmación
+    if (kilometrajeSalida > kilometrajeActual + 1000) {
+      const confirmar = window.confirm(
+        `El kilometraje ingresado (${kilometrajeSalida.toLocaleString()} km) es mucho mayor al último registro (${kilometrajeActual.toLocaleString()} km).\n\n¿Es correcto?`
+      );
+      if (!confirmar) return;
     }
 
     setLoading(true);
@@ -208,46 +268,102 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
 
   // Finalizar viaje
   const handleFinalizarViaje = async () => {
-    const kilometrajeLlegada = prompt('Ingresa el kilometraje al finalizar el viaje:');
-    if (!kilometrajeLlegada) return;
+    setShowFinalizarModal(true);
+    setKilometrajeLlegada('');
+    setErrorKmLlegada('');
+  };
+  const confirmarFinalizarViaje = async () => {
+    // Validaciones
+    if (!kilometrajeLlegada) {
+      setErrorKmLlegada('Debes ingresar el kilometraje final');
+      return;
+    }
+
+    const kmLlegada = parseInt(kilometrajeLlegada);
+    const kmSalida = viajeActivo.kilometrajeSalida;
+
+    if (kmLlegada < kmSalida) {
+      setErrorKmLlegada(`El kilometraje final no puede ser menor al inicial (${kmSalida.toLocaleString()} km)`);
+      return;
+    }
+
+    if (kmLlegada === kmSalida) {
+      setErrorKmLlegada('El vehículo debe haber recorrido alguna distancia');
+      return;
+    }
+
+    if (kmLlegada > kmSalida + 5000) {
+      const confirmar = window.confirm(
+        `¿Seguro que recorriste ${(kmLlegada - kmSalida).toLocaleString()} km en este viaje?`
+      );
+      if (!confirmar) return;
+    }
 
     setLoading(true);
+    setShowFinalizarModal(false);
+
     try {
       const horaLlegada = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
-      const kmRecorridos = parseInt(kilometrajeLlegada) - viajeActivo.kilometrajeSalida;
+      const kmRecorridos = kmLlegada - kmSalida;
 
-      // Actualizar vehículo
+      // Actualizar vehículo - DESASIGNANDO AL TRABAJADOR
       await vehiculosService.updateVehiculoEstado(vehiculoAsignado.id, 'disponible', {
-        asignadoA: currentUser.uid,
-        kilometraje: parseInt(kilometrajeLlegada),
+        // CAMBIOS IMPORTANTES: Desasignar completamente el vehículo
+        trabajadorAsignado: null,     // Campo principal - desasignar
+        asignadoA: null,              // Limpiar campo legacy
+        operadorAsignado: null,       // Limpiar campo legacy
+        asignadoNombre: null,         // Limpiar nombre del asignado
+
+        // Actualizar kilometraje y registro del último viaje
+        kilometraje: kmLlegada,
         ultimoViaje: {
           ...viajeActivo,
           fechaLlegada: new Date().toISOString().split('T')[0],
           horaLlegada: horaLlegada,
-          kilometrajeLlegada: parseInt(kilometrajeLlegada),
+          kilometrajeLlegada: kmLlegada,
           kilometrosRecorridos: kmRecorridos,
           estado: 'finalizado'
-        }
+        },
+
+        // Limpiar el viaje activo del vehículo
+        viajeActivo: null,
+        destino: null,
+        kilometrajeUltimoViaje: kmLlegada
       });
 
-      // Limpiar viaje activo del trabajador
+      // Limpiar viaje activo del trabajador Y DESASIGNAR VEHÍCULO
       await trabajadoresService.updateTrabajadorData(currentUser.uid, {
+        // CAMBIOS IMPORTANTES: Desasignar vehículo del trabajador
         viajeActivo: null,
+        vehiculoAsignado: null,       // Desasignar vehículo
+        vehicleId: null,              // Limpiar campo legacy
         estadoActual: 'disponible',
+
+        // Guardar información del último viaje
         ultimoViaje: {
           ...viajeActivo,
           fechaLlegada: new Date().toISOString().split('T')[0],
           horaLlegada: horaLlegada,
-          kilometrajeLlegada: parseInt(kilometrajeLlegada),
-          kilometrosRecorridos: kmRecorridos
+          kilometrajeLlegada: kmLlegada,
+          kilometrosRecorridos: kmRecorridos,
+          vehiculoUsado: vehiculoAsignado.nombre // Guardar referencia del vehículo usado
         }
       });
 
+      // Limpiar estados locales
       setViajeActivo(null);
+      setVehiculoAsignado(null); // IMPORTANTE: Limpiar vehículo asignado del estado local
+
+      // Mensaje de éxito actualizado
       setMessage({
         type: 'success',
-        text: `✅ Viaje finalizado. Recorriste ${kmRecorridos} km`
+        text: `✅ Viaje finalizado. Recorriste ${kmRecorridos.toLocaleString()} km. El vehículo ${vehiculoAsignado.nombre} ha sido liberado.`
       });
+
+      // Cerrar el panel automáticamente después de 3 segundos
+      setTimeout(() => {
+        onClose();
+      }, 3000);
 
     } catch (error) {
       console.error('Error al finalizar viaje:', error);
@@ -297,7 +413,7 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
   }
 
   // Si no hay vehículo asignado (después de cargar)
-  if (!loadingVehiculo && !vehiculoAsignado) {
+  if (!vehiculoAsignado) {
     return (
       <div style={{
         position: 'fixed',
@@ -341,9 +457,63 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
           >
             Cerrar
           </button>
+
+          {/* Botón temporal para limpiar datos mal guardados
+          <button
+            onClick={async () => {
+              console.log('🧹 Limpiando asignaciones incorrectas...');
+              try {
+                // Limpiar TODOS los vehículos mal asignados
+                const vehiculosRef = databaseRef(database, 'vehiculos');
+                const snapshot = await get(vehiculosRef);
+                const vehiculos = snapshot.val() || {};
+
+                for (const [id, vehiculo] of Object.entries(vehiculos)) {
+                  if (vehiculo.asignadoA === currentUser.uid ||
+                    vehiculo.operadorAsignado === currentUser.uid) {
+                    console.log(`Limpiando vehículo ${id}...`);
+                    await update(databaseRef(database, `vehiculos/${id}`), {
+                      asignadoA: null,
+                      operadorAsignado: null
+                    });
+                  }
+                }
+
+                // Limpiar el trabajador
+                await update(databaseRef(database, `trabajadores/${currentUser.uid}`), {
+                  vehiculoAsignado: null,
+                  vehicleId: null
+                });
+
+                alert('✅ Limpieza completada. Por favor recarga la página.');
+                window.location.reload();
+
+              } catch (error) {
+                console.error('Error:', error);
+                alert('Error: ' + error.message);
+              }
+            }}
+            style={{
+              padding: '10px 20px',
+              background: '#dc2626',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              marginBottom: '10px'
+            }}
+          >
+            🧹 LIMPIAR TODAS LAS ASIGNACIONES (DEBUG)
+          </button> */}
         </div>
       </div>
     );
+  }
+
+  // Solo mostrar el formulario si hay vehículo asignado
+  if (!vehiculoAsignado) {
+    return null; // Seguridad adicional
   }
 
   return (
@@ -531,7 +701,6 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
                     />
                   </div>
                 </div>
-
                 {/* Kilometraje */}
                 <div>
                   <label style={{
@@ -541,14 +710,42 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
                     fontWeight: '500',
                     color: '#374151'
                   }}>
-                    🚗 Kilometraje Actual
+                    🚗 Kilometraje Actual del Vehículo
+                  </label>
+                  <div style={{
+                    padding: '10px',
+                    border: '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    backgroundColor: '#f9fafb',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    color: '#1f2937'
+                  }}>
+                    {(vehiculoAsignado.kilometraje || 0).toLocaleString()} km
+                  </div>
+                </div>
+
+                {/* Nuevo Kilometraje */}
+                <div>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '6px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    color: '#374151'
+                  }}>
+                    📏 Kilometraje al Iniciar Viaje
                   </label>
                   <input
                     type="number"
                     value={formViaje.kilometrajeSalida}
-                    onChange={(e) => setFormViaje({ ...formViaje, kilometrajeSalida: e.target.value })}
-                    placeholder="Ej: 45000"
+                    onChange={(e) => {
+                      const nuevoKm = e.target.value;
+                      setFormViaje({ ...formViaje, kilometrajeSalida: nuevoKm });
+                    }}
+                    placeholder={`Mínimo: ${(vehiculoAsignado.kilometraje || 0).toLocaleString()} km`}
                     required
+                    min={vehiculoAsignado.kilometraje || 0}
                     style={{
                       width: '100%',
                       padding: '10px',
@@ -557,9 +754,19 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
                       fontSize: '14px'
                     }}
                   />
-                  <small style={{ color: '#6b7280', fontSize: '12px' }}>
-                    Último registro: {vehiculoAsignado.kilometraje || 0} km
-                  </small>
+                  {formViaje.kilometrajeSalida && parseInt(formViaje.kilometrajeSalida) < (vehiculoAsignado.kilometraje || 0) && (
+                    <div style={{
+                      marginTop: '5px',
+                      padding: '8px',
+                      backgroundColor: '#fee2e2',
+                      borderRadius: '6px',
+                      color: '#dc2626',
+                      fontSize: '13px',
+                      fontWeight: '500'
+                    }}>
+                      ⚠️ El kilometraje no puede ser menor a {(vehiculoAsignado.kilometraje || 0).toLocaleString()} km
+                    </div>
+                  )}
                 </div>
 
                 {/* Destino */}
@@ -648,25 +855,42 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
                 </div>
 
                 {/* Botón de acción */}
+                {/* Botón de acción */}
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={
+                    loading ||
+                    !formViaje.kilometrajeSalida ||
+                    !formViaje.destino ||
+                    (parseInt(formViaje.kilometrajeSalida) < (vehiculoAsignado.kilometraje || 0))
+                  }
                   style={{
                     padding: '14px',
-                    background: loading ? '#9ca3af' : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                    background: loading || (parseInt(formViaje.kilometrajeSalida) < (vehiculoAsignado.kilometraje || 0))
+                      ? '#9ca3af'
+                      : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                     color: 'white',
                     border: 'none',
                     borderRadius: '8px',
                     fontSize: '16px',
                     fontWeight: '600',
-                    cursor: loading ? 'not-allowed' : 'pointer',
+                    cursor: loading || (parseInt(formViaje.kilometrajeSalida) < (vehiculoAsignado.kilometraje || 0))
+                      ? 'not-allowed'
+                      : 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '10px',
-                    transition: 'transform 0.2s'
+                    transition: 'transform 0.2s',
+                    opacity: loading || (parseInt(formViaje.kilometrajeSalida) < (vehiculoAsignado.kilometraje || 0))
+                      ? 0.5
+                      : 1
                   }}
-                  onMouseEnter={(e) => !loading && (e.currentTarget.style.transform = 'scale(1.02)')}
+                  onMouseEnter={(e) => {
+                    if (!loading && !(parseInt(formViaje.kilometrajeSalida) < (vehiculoAsignado.kilometraje || 0))) {
+                      e.currentTarget.style.transform = 'scale(1.02)';
+                    }
+                  }}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                 >
                   {loading ? (
@@ -770,6 +994,196 @@ const TrabajadorVehiclePanel = ({ currentUser, onClose }) => {
           100% { transform: rotate(360deg); }
         }
       `}</style>
+      {/* Modal de Finalización de Viaje */}
+      {showFinalizarModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 10000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '450px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+          }}>
+            {/* Header del Modal */}
+            <div style={{
+              padding: '20px',
+              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+              borderRadius: '12px 12px 0 0',
+              color: 'white'
+            }}>
+              <h3 style={{
+                margin: 0,
+                fontSize: '20px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                🏁 Finalizar Viaje
+              </h3>
+            </div>
+
+            {/* Contenido del Modal */}
+            <div style={{ padding: '20px' }}>
+              {/* Info del viaje */}
+              <div style={{
+                background: '#f9fafb',
+                padding: '15px',
+                borderRadius: '8px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ marginBottom: '10px' }}>
+                  <span style={{ fontSize: '13px', color: '#6b7280' }}>Destino:</span>
+                  <div style={{ fontWeight: '600', fontSize: '16px', color: '#1f2937' }}>
+                    {viajeActivo.destino}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                  <div>
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>Hora de salida:</span>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>
+                      {viajeActivo.horaSalida}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>Km de salida:</span>
+                    <div style={{ fontWeight: '600', fontSize: '14px' }}>
+                      {viajeActivo.kilometrajeSalida.toLocaleString()} km
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Campo de kilometraje final */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#374151'
+                }}>
+                  📏 Kilometraje Final del Vehículo
+                </label>
+                <input
+                  type="number"
+                  value={kilometrajeLlegada}
+                  onChange={(e) => {
+                    setKilometrajeLlegada(e.target.value);
+                    setErrorKmLlegada('');
+                  }}
+                  placeholder={`Mínimo: ${(viajeActivo.kilometrajeSalida + 1).toLocaleString()} km`}
+                  min={viajeActivo.kilometrajeSalida + 1}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: errorKmLlegada ? '2px solid #ef4444' : '2px solid #e5e7eb',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    fontWeight: '500',
+                    backgroundColor: errorKmLlegada ? '#fee2e2' : 'white'
+                  }}
+                  autoFocus
+                />
+
+                {/* Mensaje de error */}
+                {errorKmLlegada && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px',
+                    backgroundColor: '#fee2e2',
+                    borderRadius: '6px',
+                    color: '#dc2626',
+                    fontSize: '13px',
+                    fontWeight: '500'
+                  }}>
+                    ⚠️ {errorKmLlegada}
+                  </div>
+                )}
+
+                {/* Información de kilómetros a recorrer */}
+                {kilometrajeLlegada && parseInt(kilometrajeLlegada) > viajeActivo.kilometrajeSalida && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '10px',
+                    backgroundColor: '#dcfce7',
+                    borderRadius: '6px',
+                    color: '#15803d',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    textAlign: 'center'
+                  }}>
+                    📍 Distancia recorrida: {(parseInt(kilometrajeLlegada) - viajeActivo.kilometrajeSalida).toLocaleString()} km
+                  </div>
+                )}
+              </div>
+
+              {/* Botones */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px',
+                marginTop: '20px'
+              }}>
+                <button
+                  onClick={() => {
+                    setShowFinalizarModal(false);
+                    setKilometrajeLlegada('');
+                    setErrorKmLlegada('');
+                  }}
+                  style={{
+                    padding: '12px',
+                    background: '#6b7280',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarFinalizarViaje}
+                  disabled={!kilometrajeLlegada || parseInt(kilometrajeLlegada) <= viajeActivo.kilometrajeSalida}
+                  style={{
+                    padding: '12px',
+                    background: !kilometrajeLlegada || parseInt(kilometrajeLlegada) <= viajeActivo.kilometrajeSalida
+                      ? '#9ca3af'
+                      : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: !kilometrajeLlegada || parseInt(kilometrajeLlegada) <= viajeActivo.kilometrajeSalida
+                      ? 'not-allowed'
+                      : 'pointer',
+                    opacity: !kilometrajeLlegada || parseInt(kilometrajeLlegada) <= viajeActivo.kilometrajeSalida
+                      ? 0.5
+                      : 1
+                  }}
+                >
+                  🏁 Finalizar Viaje
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
